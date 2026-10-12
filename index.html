@@ -10,6 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Shippori+Mincho:wght@500;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
 :root{
   box-sizing:border-box;
@@ -286,6 +287,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       </div>
       <p class="msg" id="menu-msg" role="status"></p>
       <p class="note" id="menu-note">部屋をつくると、友だちに送れるリンクができます。リンクを開くだけで参加できます。</p>
+      <p class="note">部屋をつくった人（ホスト）の画面がゲームを進めます。ホストが画面を閉じると、その部屋は終わります。</p>
     </div>
   </section>
 
@@ -302,6 +304,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
         <p class="note" id="lb-wait" hidden>ホストが開始するのを待っています…</p>
       </div>
       <p class="note">最大4人。空いている席には CPU が入ります。</p>
+      <p class="note" id="lb-hostnote" hidden>遊んでいる間は、この画面を開いたままにしてください。</p>
     </div>
   </section>
 
@@ -328,11 +331,19 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 
 <script>
 (() => {
+  /* ======================= 定数・道具 ======================= */
+  const PEER_PREFIX = 'daifugo-oc-';
+  const DROP_MS = 8000;      // 通信が切れてから「離席」とみなすまで
+  const TURN_MS = 60000;     // 1手の持ち時間
+  const EX_MS = 45000;       // カード交換の持ち時間
+  const CPU_MS = 900;        // CPU が考える時間
+  const CPU_NAMES = ['ハルカ', 'タケル', 'ミナ'];
+  const TITLES = ['大富豪', '富豪', '貧民', '大貧民'];
+  const POINTS = [4, 3, 2, 1];
+  const SUITS = ['S', 'H', 'D', 'C'];
   const SYM = { S:'♠', H:'♥', D:'♦', C:'♣' };
   const SUIT_NAME = { S:'スペード', H:'ハート', D:'ダイヤ', C:'クラブ' };
-  const LABEL = r => r <= 10 ? String(r) : ({11:'J',12:'Q',13:'K',14:'A',15:'2'})[r];
-  const TITLES = ['大富豪','富豪','貧民','大貧民'];
-  const POINTS = [4,3,2,1];
+  const LABEL = r => (r <= 10 ? String(r) : { 11:'J', 12:'Q', 13:'K', 14:'A', 15:'2' }[r]);
   const $ = id => document.getElementById(id);
   const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
   const store = {
@@ -340,86 +351,647 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     set(k,v){ try { localStorage.setItem(k, v); } catch (e) {} },
     del(k){ try { localStorage.removeItem(k); } catch (e) {} }
   };
+  const randInt = n => {
+    try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; }
+    catch (e) { return Math.floor(Math.random() * n); }
+  };
+  const randToken = () => Array.from({ length:16 }, () => randInt(256).toString(16).padStart(2, '0')).join('');
+  const safe = fn => { try { fn(); } catch (e) { console.error(e); } };
+  class ApiError extends Error {}
 
-  let V = null;            // サーバーから届く自分用の盤面
-  let recvAt = 0;          // V を受け取った時刻
-  let me = -1;
-  let session = null;      // { code, token }
-  let es = null, pending = false, modalKind = '', toastTimer = null;
+  /* ======================= カードとルール ======================= */
+  function makeDeck(){
+    const d = []; let id = 0;
+    for (const s of SUITS) for (let r = 3; r <= 15; r++) d.push({ id:id++, s, r });
+    d.push({ id:id++, s:'J', r:16 }, { id:id++, s:'J', r:16 });
+    return d;
+  }
+  function shuffle(a){
+    for (let i = a.length - 1; i > 0; i--){
+      const j = randInt(i + 1);
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  const byBase = (a,b) => a.r - b.r || SUITS.indexOf(a.s) - SUITS.indexOf(b.s);
+  const top = (arr,n) => arr.slice().sort((a,b) => byBase(b,a)).slice(0,n);
+  const low = (arr,n) => arr.slice().sort(byBase).slice(0,n);
+  const cardText = c => (c.s === 'J' ? 'ジョーカー' : SYM[c.s] + LABEL(c.r));
+  const cardsText = cs => cs.map(cardText).join(' ');
+  const strength = (g,r) => (r === 16 ? 16 : g.rev ? 18 - r : r);
+  const active = g => [0,1,2,3].filter(i => !g.finished.includes(i));
+  function nextActive(g,p){
+    for (let k = 1; k <= 4; k++){
+      const i = (p + k) % 4;
+      if (!g.finished.includes(i)) return i;
+    }
+    return p;
+  }
+
+  function validate(g, cards){
+    const n = cards.length;
+    if (!n) return { ok:false, reason:'' };
+    if (n > 4) return { ok:false, reason:'一度に出せるのは4枚までです' };
+    const nat = cards.filter(c => c.s !== 'J');
+    if (nat.some(c => c.r !== nat[0].r)) return { ok:false, reason:'同じ数字のカードだけまとめて出せます' };
+    const rank = nat.length ? nat[0].r : 16;
+    const f = g.field;
+    if (!f) return { ok:true, rank };
+    if (f.count === 1 && f.cards[0].s === 'J' && n === 1 && cards[0].s === 'S' && cards[0].r === 3){
+      return { ok:true, rank:3, ret:true };
+    }
+    if (n !== f.count) return { ok:false, reason:`場は${f.count}枚です。${f.count}枚で出してください` };
+    if (strength(g, rank) <= strength(g, f.rank)) return { ok:false, reason:'場より強いカードを選んでください' };
+    return { ok:true, rank };
+  }
+
+  function candidates(hand){
+    const jokers = hand.filter(c => c.s === 'J');
+    const nat = hand.filter(c => c.s !== 'J');
+    const byRank = {};
+    nat.forEach(c => (byRank[c.r] = byRank[c.r] || []).push(c));
+    const out = [];
+    for (const r in byRank){
+      const arr = byRank[r].slice().sort((a,b) => (a.s === 'S') - (b.s === 'S'));
+      const max = Math.min(4, arr.length + jokers.length);
+      for (let s = 1; s <= max; s++){
+        const useN = Math.min(s, arr.length);
+        out.push([...arr.slice(0, useN), ...jokers.slice(0, s - useN)]);
+      }
+    }
+    for (let s = 1; s <= jokers.length; s++) out.push(jokers.slice(0, s));
+    const s3 = nat.find(c => c.s === 'S' && c.r === 3);
+    if (s3) out.push([s3]);
+    return out;
+  }
+
+  function chooseCpu(g, p, mustPlay){
+    const hand = g.hands[p];
+    const legal = candidates(hand).filter(c => validate(g, c).ok);
+    if (!legal.length) return null;
+    const win = legal.find(c => c.length === hand.length);
+    if (win) return win;
+    const score = c => {
+      const v = validate(g, c);
+      const jk = c.filter(x => x.s === 'J').length;
+      return strength(g, v.rank) + jk * 6 - c.length * 0.8;
+    };
+    legal.sort((a,b) => score(a) - score(b));
+    const best = legal[0];
+    if (g.field && hand.length > 5 && !mustPlay){
+      const danger = active(g).some(i => i !== p && g.hands[i].length <= 2);
+      const v = validate(g, best);
+      const heavy = strength(g, v.rank) >= 14 || best.some(x => x.s === 'J');
+      if (!danger && heavy && Math.random() < 0.55) return null;
+    }
+    return best;
+  }
+
+  /* ======================= ホスト側：部屋とゲーム進行 =======================
+     ゲームの進行・配札・CPU は、部屋をつくった人（ホスト）のブラウザの中で動きます。 */
+  let HR = null;   // ホストが持つ部屋 { code, players, g, timer, ... }
+
+  function newGameState(){
+    return {
+      phase:'lobby', seq:0, gameNo:0, score:[0,0,0,0], prevOrder:null, seats:null,
+      hands:[[],[],[],[]], finished:[], fresh:[], log:[], field:null, ghost:null,
+      rev:false, turn:-1, passes:0, ex:null, fx:null, deadline:null
+    };
+  }
+  function cleanName(n){
+    const s = String(n == null ? '' : n).replace(/[\u0000-\u001f\u007f<>]/g, '').trim();
+    return Array.from(s).slice(0, 8).join('') || 'プレイヤー';
+  }
+  function newPlayer(name, local){
+    return { id:local ? 'host' : randToken(), name:cleanName(name), seat:-1, local:!!local, conn:null, online:!!local, dropAt:local ? null : Date.now() };
+  }
+  const playerBySeat = (room,i) => room.players.find(p => p.seat === i);
+  function absent(room,i){
+    const p = playerBySeat(room,i);
+    return !!p && !p.local && !p.online && p.dropAt != null && Date.now() - p.dropAt > DROP_MS;
+  }
+  const isAuto = (room,i) => !!room.g.seats[i].cpu || absent(room,i);
+  const curHost = room => room.players.find(p => p.local);
+  function glog(g, msg){
+    g.log.push(msg);
+    if (g.log.length > 30) g.log.splice(0, g.log.length - 30);
+  }
+
+  function viewFor(room, p){
+    const g = room.g;
+    const v = { code:room.code, phase:g.phase, gameNo:g.gameNo, isHost:p.local, seq:g.seq, fx:g.fx, score:g.score, prevOrder:g.prevOrder };
+    if (g.phase === 'lobby'){
+      v.players = room.players.map(q => ({ name:q.name, host:q.local, you:q.id === p.id, connected:q.online }));
+      return v;
+    }
+    v.you = p.seat;
+    v.seats = g.seats.map((s,i) => ({ name:s.name, cpu:!!s.cpu, away:!s.cpu && absent(room,i), count:g.hands[i].length }));
+    v.hand = p.seat >= 0 ? g.hands[p.seat] : [];
+    const mine = new Set(v.hand.map(c => c.id));
+    v.fresh = g.fresh.filter(id => mine.has(id));
+    v.field = g.field; v.ghost = g.ghost; v.rev = g.rev; v.turn = g.turn; v.finished = g.finished;
+    v.log = g.log.slice(-4);
+    v.msLeft = g.deadline ? Math.max(0, g.deadline - Date.now()) : null;
+    v.exNeed = g.ex ? (g.ex.need[p.seat] || 0) : 0;
+    v.exSent = !!(g.ex && g.ex.sub[p.seat]);
+    return v;
+  }
+
+  function broadcast(room){
+    for (const p of room.players){
+      if (!p.online) continue;
+      const view = JSON.parse(JSON.stringify(viewFor(room, p)));
+      if (p.local) deliver(view);
+      else if (p.conn){ try { p.conn.send({ type:'view', view }); } catch (e) {} }
+    }
+  }
+
+  function touch(room, fx){
+    const g = room.g;
+    g.seq++;
+    if (fx) g.fx = { seq:g.seq, text:fx };
+    schedule(room);
+    broadcast(room);
+  }
+
+  function startRoom(room){
+    const g = room.g;
+    const host = curHost(room);
+    const ordered = [host, ...room.players.filter(p => p !== host)].slice(0, 4);
+    const used = new Set();
+    g.seats = ordered.map((p,i) => {
+      let n = p.name, k = 2;
+      while (used.has(n)) n = p.name + k++;
+      used.add(n);
+      p.seat = i;
+      return { name:n, cpu:false, pid:p.id };
+    });
+    room.players = ordered;
+    let ci = 0;
+    while (g.seats.length < 4) g.seats.push({ name:CPU_NAMES[ci++], cpu:true, pid:null });
+    newGame(room);
+  }
+
+  function newGame(room){
+    const g = room.g;
+    const deck = shuffle(makeDeck());
+    const hands = [[],[],[],[]];
+    deck.forEach((c,i) => hands[i % 4].push(c));
+    hands.forEach(h => h.sort(byBase));
+    Object.assign(g, {
+      hands, field:null, ghost:null, rev:false, passes:0, finished:[], phase:'play',
+      fresh:[], log:[], ex:null, gameNo:g.gameNo + 1, turn:-1, fx:null
+    });
+    if (g.prevOrder){ startExchange(room); return; }
+    g.turn = hands.findIndex(h => h.some(c => c.s === 'D' && c.r === 3));
+    glog(g, `${g.seats[g.turn].name}が♦3を持っているので先攻です`);
+    touch(room);
+  }
+
+  function startExchange(room){
+    const g = room.g;
+    const [d,f,h,dh] = g.prevOrder;
+    const H = g.hands;
+    g.ex = { d, f, h, dh, gDh:top(H[dh], 2), gH:top(H[h], 1), need:{}, sub:{} };
+    if (!isAuto(room, d)) g.ex.need[d] = 2;
+    if (!isAuto(room, f)) g.ex.need[f] = 1;
+    if (Object.keys(g.ex.need).length){
+      g.phase = 'exchange';
+      glog(g, 'カード交換：大富豪と富豪が渡すカードを選んでいます');
+      touch(room);
+      return;
+    }
+    finishExchange(room);
+  }
+
+  const exchangeReady = g => Object.keys(g.ex.need).every(s => g.ex.sub[s]);
+
+  function finishExchange(room){
+    const g = room.g;
+    const { d, f, h, dh, gDh, gH, sub } = g.ex;
+    const H = g.hands;
+    const pick = (seat, n, fb) => {
+      const ids = sub[seat];
+      if (ids){
+        const cs = H[seat].filter(c => ids.includes(c.id));
+        if (cs.length === n) return cs;
+      }
+      return fb();
+    };
+    const giftD = pick(d, 2, () => low(H[d], 2));
+    const giftF = pick(f, 1, () => low(H[f], 1));
+    const move = (from, to, cards) => {
+      const ids = new Set(cards.map(c => c.id));
+      H[from] = H[from].filter(c => !ids.has(c.id));
+      H[to].push(...cards);
+      cards.forEach(c => g.fresh.push(c.id));
+    };
+    move(d, dh, giftD); move(dh, d, gDh);
+    move(f, h, giftF);  move(h, f, gH);
+    H.forEach(x => x.sort(byBase));
+    glog(g, 'カード交換を行いました');
+    glog(g, `${TITLES[3]}の${g.seats[dh].name}から開始`);
+    g.turn = dh; g.phase = 'play'; g.ex = null;
+    touch(room);
+  }
+
+  function doPlay(room, p, cards){
+    const g = room.g;
+    const v = validate(g, cards);
+    if (!v.ok) return false;
+    const ids = new Set(cards.map(c => c.id));
+    g.hands[p] = g.hands[p].filter(c => !ids.has(c.id));
+    const own = new Set(g.hands[p].map(c => c.id));
+    g.fresh = g.fresh.filter(id => !ids.has(id) && !own.has(id));
+    const shown = cards.slice().sort(byBase);
+    const name = g.seats[p].name;
+    g.ghost = null;
+    g.field = { cards:shown, count:cards.length, rank:v.rank, owner:p };
+    g.passes = 0;
+    glog(g, `${name}：${cardsText(shown)}${v.ret ? '（スペ3返し）' : ''}`);
+
+    let fx = '';
+    if (cards.length >= 4){
+      g.rev = !g.rev;
+      glog(g, g.rev ? '革命！ カードの強さが逆転' : '革命返し！ 強さが元に戻った');
+      fx = '革命';
+    }
+    let out = false;
+    if (g.hands[p].length === 0){
+      g.finished.push(p);
+      out = true;
+      glog(g, `${name}があがり（${TITLES[g.finished.length - 1]}）`);
+    }
+    if (active(g).length <= 1){ endGame(room, fx); return true; }
+
+    let next;
+    if (v.rank === 8 && !v.ret){
+      g.ghost = { cards:shown, owner:p, note:`${name}の八切り` };
+      g.field = null;
+      glog(g, '八切り！ 場が流れた');
+      if (!fx) fx = '八切り';
+      next = out ? nextActive(g, p) : p;
+    } else {
+      next = nextActive(g, p);
+    }
+    g.turn = next;
+    touch(room, fx);
+    return true;
+  }
+
+  function doPass(room, p){
+    const g = room.g;
+    g.passes++;
+    glog(g, `${g.seats[p].name}：パス`);
+    const f = g.field;
+    const ownerActive = !g.finished.includes(f.owner);
+    const need = ownerActive ? active(g).length - 1 : active(g).length;
+    if (g.passes >= need){
+      g.ghost = { cards:f.cards, owner:f.owner, note:'全員パスで場が流れました' };
+      g.field = null;
+      g.passes = 0;
+      glog(g, '全員パス。場が流れた');
+      g.turn = ownerActive ? f.owner : nextActive(g, f.owner);
+    } else {
+      g.turn = nextActive(g, p);
+    }
+    touch(room);
+  }
+
+  function endGame(room, fx){
+    const g = room.g;
+    active(g).forEach(i => g.finished.push(i));
+    g.phase = 'over';
+    g.prevOrder = g.finished.slice();
+    g.prevOrder.forEach((p,i) => { g.score[p] += POINTS[i]; });
+    glog(g, `対戦終了。${g.seats[g.prevOrder[0]].name}が大富豪`);
+    g.turn = -1;
+    touch(room, fx);
+  }
+
+  /* ----- 自動進行（CPU・離席・時間切れ） ----- */
+  function schedule(room){
+    clearTimeout(room.timer);
+    const g = room.g;
+    g.deadline = null;
+    try {
+      if (g.phase === 'exchange' && g.ex){
+        for (const s of Object.keys(g.ex.need)){
+          if (!g.ex.sub[s] && absent(room, Number(s))) g.ex.sub[s] = low(g.hands[s], g.ex.need[s]).map(c => c.id);
+        }
+        if (exchangeReady(g)){ finishExchange(room); return; }
+        if (room.deadlineSeq !== g.seq){ room.deadlineSeq = g.seq; room.deadlineAt = Date.now() + EX_MS; }
+        g.deadline = room.deadlineAt;
+        const key = g.seq;
+        room.timer = setTimeout(() => safe(() => {
+          if (room.g.seq !== key || room.g.phase !== 'exchange') return;
+          const ex = room.g.ex;
+          for (const s of Object.keys(ex.need)) if (!ex.sub[s]) ex.sub[s] = low(room.g.hands[s], ex.need[s]).map(c => c.id);
+          finishExchange(room);
+        }), Math.max(0, room.deadlineAt - Date.now()));
+        return;
+      }
+      if (g.phase !== 'play') return;
+      const t = g.turn;
+      if (t < 0) return;
+      const key = g.seq;
+      if (isAuto(room, t)){
+        const humansDone = g.seats.every((s,i) => s.cpu || g.finished.includes(i) || absent(room, i));
+        const delay = humansDone ? 300 : CPU_MS + Math.random() * 350;
+        room.timer = setTimeout(() => safe(() => autoMove(room, t, key, false)), delay);
+      } else {
+        if (room.deadlineSeq !== g.seq){ room.deadlineSeq = g.seq; room.deadlineAt = Date.now() + TURN_MS; }
+        g.deadline = room.deadlineAt;
+        room.timer = setTimeout(() => safe(() => autoMove(room, t, key, true)), Math.max(0, room.deadlineAt - Date.now()));
+      }
+    } catch (e) { console.error('schedule', e); }
+  }
+
+  function autoMove(room, p, seq, timedOut){
+    const g = room.g;
+    if (g.seq !== seq || g.phase !== 'play' || g.turn !== p) return;
+    if (timedOut) glog(g, `${g.seats[p].name}は時間切れのため自動で進行します`);
+    const choice = chooseCpu(g, p, timedOut);
+    if (choice) doPlay(room, p, choice); else doPass(room, p);
+  }
+
+  function handCards(room, p, ids){
+    if (!Array.isArray(ids) || ids.length > 4 || !ids.every(Number.isInteger)) throw new ApiError('カードの指定が正しくありません');
+    const cards = room.g.hands[p.seat].filter(c => ids.includes(c.id));
+    if (cards.length !== new Set(ids).size) throw new ApiError('そのカードは持っていません');
+    return cards;
+  }
+
+  function applyAction(room, p, body){
+    const g = room.g;
+    const isHost = !!p.local;
+    switch (body.type){
+      case 'start':
+        if (g.phase !== 'lobby') throw new ApiError('すでに始まっています');
+        if (!isHost) throw new ApiError('ホストだけが開始できます');
+        startRoom(room);
+        return;
+      case 'play': {
+        if (g.phase !== 'play' || g.turn !== p.seat) throw new ApiError('あなたの番ではありません');
+        const cards = handCards(room, p, body.ids);
+        const v = validate(g, cards);
+        if (!v.ok) throw new ApiError(v.reason || '出せないカードです');
+        doPlay(room, p.seat, cards);
+        return;
+      }
+      case 'pass':
+        if (g.phase !== 'play' || g.turn !== p.seat) throw new ApiError('あなたの番ではありません');
+        if (!g.field) throw new ApiError('最初の手番ではパスできません');
+        doPass(room, p.seat);
+        return;
+      case 'exchange': {
+        if (g.phase !== 'exchange' || !g.ex) throw new ApiError('いまはカード交換の時間ではありません');
+        const need = g.ex.need[p.seat];
+        if (!need) throw new ApiError('あなたは渡すカードを選ぶ必要がありません');
+        const cards = handCards(room, p, body.ids);
+        if (cards.length !== need) throw new ApiError(`${need}枚を選んでください`);
+        g.ex.sub[p.seat] = cards.map(c => c.id);
+        if (exchangeReady(g)) finishExchange(room); else touch(room);
+        return;
+      }
+      case 'next':
+        if (g.phase !== 'over') throw new ApiError('対戦中です');
+        if (!isHost) throw new ApiError('ホストだけが次の対戦を始められます');
+        newGame(room);
+        return;
+      case 'reset':
+        if (g.phase !== 'over') throw new ApiError('対戦中です');
+        if (!isHost) throw new ApiError('ホストだけが操作できます');
+        g.score = [0,0,0,0]; g.prevOrder = null; g.gameNo = 0;
+        newGame(room);
+        return;
+      case 'leave':
+        if (g.phase === 'lobby' && !p.local){
+          room.players = room.players.filter(q => q !== p);
+          if (p.conn){ const c = p.conn; p.conn = null; p.online = false; setTimeout(() => { try { c.close(); } catch (e) {} }, 300); }
+          touch(room);
+        }
+        return;
+      default:
+        throw new ApiError('不明な操作です');
+    }
+  }
+
+  /* ======================= 通信（PeerJS） ======================= */
+  let mode = null;                 // 'host' | 'guest'
+  let peer = null, conn = null;    // ゲスト：ホストへの接続
+  let guest = { code:'', token:'', tries:0, timer:null };
+
+  function genCode(){
+    const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let s = '';
+    for (let i = 0; i < 4; i++) s += A[randInt(A.length)];
+    return s;
+  }
+
+  function teardownAll(){
+    if (HR){ clearTimeout(HR.timer); }
+    HR = null;
+    clearTimeout(guest.timer);
+    if (conn){ try { conn.close(); } catch (e) {} conn = null; }
+    if (peer){ try { peer.destroy(); } catch (e) {} peer = null; }
+    mode = null;
+  }
+
+  /* --- ホスト --- */
+  function createRoom(solo){
+    if (!solo && !(window.Peer)){
+      menuMsg('オンライン機能を読み込めませんでした。通信状況を確認して、ページを開き直してください');
+      return;
+    }
+    teardownAll();
+    mode = 'host'; L = newLocal(); V = null;
+    const hp = newPlayer(nameNow() || (solo ? 'あなた' : 'ホスト'), true);
+    HR = { code:'', players:[hp], hostId:hp.id, g:newGameState(), timer:null, deadlineSeq:-1, deadlineAt:0 };
+    if (solo){ startRoom(HR); return; }
+    menuMsg('部屋をつくっています…');
+    openHostPeer(0);
+  }
+
+  function openHostPeer(tries){
+    const room = HR;
+    const code = genCode();
+    let p;
+    try { p = new window.Peer(PEER_PREFIX + code); }
+    catch (e) { menuMsg('オンライン機能を開始できませんでした'); teardownAll(); return; }
+    peer = p;
+    let opened = false;
+    p.on('open', () => {
+      opened = true;
+      if (HR !== room) return;
+      room.code = code;
+      menuMsg('');
+      broadcast(room);
+    });
+    p.on('connection', c => { if (HR === room) onGuestConn(room, c); });
+    p.on('disconnected', () => { try { p.reconnect(); } catch (e) {} });
+    p.on('error', e => {
+      if (HR !== room) return;
+      if (!opened && e.type === 'unavailable-id' && tries < 6){
+        try { p.destroy(); } catch (x) {}
+        openHostPeer(tries + 1);
+        return;
+      }
+      if (!opened){
+        menuMsg('接続サービスにつながりません。しばらくしてからもう一度お試しください');
+        teardownAll();
+      } else if (e.type !== 'peer-unavailable') {
+        console.warn('peer error', e.type);
+      }
+    });
+  }
+
+  function onGuestConn(room, c){
+    c.on('data', msg => safe(() => {
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.type === 'join'){ handleJoin(room, c, msg); return; }
+      if (msg.type === 'act'){
+        const p = c.__p;
+        if (!p){ c.send({ type:'error', message:'まだ参加していません' }); return; }
+        try { applyAction(room, p, msg.action || {}); }
+        catch (e) { c.send({ type:'error', message:e instanceof ApiError ? e.message : 'エラーが起きました' }); if (!(e instanceof ApiError)) console.error(e); }
+      }
+    }));
+    c.on('close', () => safe(() => {
+      const p = c.__p;
+      if (!p || p.conn !== c || HR !== room) return;
+      p.conn = null; p.online = false; p.dropAt = Date.now();
+      broadcast(room);
+      const seq = room.g.seq;
+      setTimeout(() => {
+        if (HR !== room || p.online) return;
+        broadcast(room);
+        if (room.g.seq === seq) schedule(room);
+      }, DROP_MS + 100);
+    }));
+  }
+
+  function handleJoin(room, c, msg){
+    const g = room.g;
+    const existing = msg.token && room.players.find(q => !q.local && q.id === msg.token);
+    if (existing){
+      if (existing.conn && existing.conn !== c){ const old = existing.conn; existing.conn = null; try { old.close(); } catch (e) {} }
+      existing.conn = c; existing.online = true; existing.dropAt = null; c.__p = existing;
+      c.send({ type:'joined', token:existing.id });
+      broadcast(room);
+      return;
+    }
+    if (g.phase !== 'lobby'){ c.send({ type:'error', fatal:true, message:'この部屋の対戦はすでに始まっています' }); return; }
+    if (room.players.length >= 4){ c.send({ type:'error', fatal:true, message:'この部屋は満席です' }); return; }
+    const p = newPlayer(msg.name, false);
+    p.conn = c; p.online = true; p.dropAt = null; c.__p = p;
+    room.players.push(p);
+    c.send({ type:'joined', token:p.id });
+    touch(room);
+  }
+
+  /* --- ゲスト --- */
+  function joinRoom(raw){
+    const c = String(raw || '').trim().toUpperCase();
+    if (!/^[A-Z0-9]{4}$/.test(c)){ menuMsg('4文字のコードを入力してください'); return; }
+    if (!window.Peer){ menuMsg('オンライン機能を読み込めませんでした。通信状況を確認して、ページを開き直してください'); return; }
+    teardownAll();
+    mode = 'guest'; L = newLocal(); V = null;
+    let tok = '';
+    try { const s = JSON.parse(store.get('daifugo:session') || 'null'); if (s && s.code === c) tok = s.token; } catch (e) {}
+    guest = { code:c, token:tok, tries:0, timer:null };
+    menuMsg('接続しています…');
+    connectGuest();
+  }
+
+  function connectGuest(){
+    const my = guest;
+    if (peer){ try { peer.destroy(); } catch (e) {} peer = null; }
+    conn = null;
+    let p;
+    try { p = new window.Peer(); }
+    catch (e) { guestFailed('オンライン機能を開始できませんでした'); return; }
+    peer = p;
+    let joined = false;
+    p.on('open', () => {
+      if (guest !== my) return;
+      const c = p.connect(PEER_PREFIX + my.code, { reliable:true, serialization:'json' });
+      conn = c;
+      c.on('open', () => { if (guest === my) c.send({ type:'join', name:nameNow(), token:my.token }); });
+      c.on('data', msg => safe(() => {
+        if (guest !== my || !msg) return;
+        if (msg.type === 'joined'){
+          joined = true; my.tries = 0; my.token = msg.token;
+          store.set('daifugo:session', JSON.stringify({ code:my.code, token:msg.token }));
+          menuMsg('');
+        } else if (msg.type === 'view'){
+          deliver(msg.view);
+        } else if (msg.type === 'error'){
+          if (msg.fatal || !V){ guestFailed(msg.message, true); } else toast(msg.message);
+        } else if (msg.type === 'closed'){
+          guestFailed('ホストが部屋を閉じました', true);
+        }
+      }));
+      c.on('close', () => { if (guest === my && mode === 'guest') guestLost(); });
+      c.on('error', () => { if (guest === my && mode === 'guest') guestLost(); });
+    });
+    p.on('error', e => {
+      if (guest !== my) return;
+      if (e.type === 'peer-unavailable'){
+        if (V) guestLost();
+        else guestFailed('部屋が見つかりません。コードと、ホストの画面が開いているかを確かめてください', true);
+      } else if (!joined) {
+        guestLost();
+      }
+    });
+  }
+
+  function guestLost(){
+    const my = guest;
+    if (my.tries >= 15){ guestFailed('ホストにつながりません。ホストが画面を閉じた可能性があります', true); return; }
+    my.tries++;
+    $('conn-chip').hidden = false;
+    clearTimeout(my.timer);
+    my.timer = setTimeout(() => { if (guest === my && mode === 'guest') connectGuest(); }, 2000);
+  }
+
+  function guestFailed(message, clear){
+    if (clear) store.del('daifugo:session');
+    teardownAll();
+    toMenu();
+    menuMsg(message || '');
+  }
+
+  /* --- 操作の送信 --- */
+  let pending = false, pendingTimer = null;
+  function doAct(type, extra){
+    const body = Object.assign({ type }, extra || {});
+    if (mode === 'host' && HR){
+      try { applyAction(HR, curHost(HR), body); }
+      catch (e) { if (e instanceof ApiError) toast(e.message); else { console.error(e); toast('エラーが起きました'); } }
+    } else if (mode === 'guest' && conn){
+      pending = true; renderControls();
+      clearTimeout(pendingTimer);
+      pendingTimer = setTimeout(() => { pending = false; if (V) renderControls(); }, 3000);
+      try { conn.send({ type:'act', action:body }); } catch (e) { pending = false; toast('送信できませんでした'); }
+    }
+  }
+
+  /* ======================= 画面（クライアント） ======================= */
+  let V = null, recvAt = 0, me = -1, modalKind = '', toastTimer = null;
   let L = newLocal();
   let myName = store.get('daifugo:name') || '';
-
   function newLocal(){ return { sel:new Set(), inited:false, lastFx:0, lastField:'', resultFor:-1 }; }
   const nm = p => V.seats[p].name;
   const myHand = () => (V && V.hand) || [];
   const selectedCards = () => myHand().filter(c => L.sel.has(c.id));
   const nameNow = () => (myName || '').trim();
 
-  /* ---------- 通信 ---------- */
-  async function api(path, body){
-    const r = await fetch(path, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body) });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || '通信に失敗しました');
-    return d;
-  }
-
-  async function act(type, extra){
-    if (!session || pending) return;
-    pending = true; renderControls();
-    try {
-      await api('/api/act', Object.assign({ code:session.code, token:session.token, type }, extra || {}));
-    } catch (e) {
-      toast(e.message);
-    } finally {
-      pending = false;
-      if (V) renderControls();
-    }
-  }
-
-  function saveSession(s){ session = s; store.set('daifugo:session', JSON.stringify(s)); }
-  function clearSession(){ session = null; store.del('daifugo:session'); }
-
-  function connect(){
-    closeStream();
-    es = new EventSource(`/api/events?code=${encodeURIComponent(session.code)}&token=${encodeURIComponent(session.token)}`);
-    es.onmessage = e => {
-      V = JSON.parse(e.data);
-      recvAt = Date.now();
-      $('conn-chip').hidden = true;
-      onUpdate();
-    };
-    es.onerror = () => {
-      if (es && es.readyState === 2){          // サーバーに拒否された（部屋が無い等）
-        clearSession(); closeStream();
-        toast('部屋が見つかりません。終了した可能性があります');
-        toMenu();
-      } else {
-        $('conn-chip').hidden = false;
-      }
-    };
-  }
-  function closeStream(){ if (es){ es.onmessage = es.onerror = null; es.close(); es = null; } }
-
-  async function enter(path, body){
-    menuMsg('接続しています…');
-    try {
-      const d = await api(path, body);
-      saveSession({ code:d.code, token:d.token });
-      L = newLocal(); V = null;
-      menuMsg('');
-      connect();
-    } catch (e) {
-      menuMsg(e.message);
-    }
-  }
-
-  const createRoom = () => enter('/api/create', { name:nameNow() });
-  const startSolo = () => enter('/api/create', { name:nameNow(), solo:true });
-  function joinRoom(raw){
-    const c = String(raw || '').trim().toUpperCase();
-    if (!/^[A-Z0-9]{4}$/.test(c)){ menuMsg('4文字のコードを入力してください'); return; }
-    const same = session && session.code === c ? session.token : undefined;
-    enter('/api/join', { code:c, name:nameNow(), token:same });
+  function deliver(view){
+    V = view; recvAt = Date.now();
+    pending = false;
+    $('conn-chip').hidden = true;
+    onUpdate();
   }
 
   function toMenu(){
@@ -430,14 +1002,24 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     showScreen('menu');
   }
 
-  async function leave(){
-    const s = session;
-    closeStream(); clearSession();
-    if (s) { try { await api('/api/act', { code:s.code, token:s.token, type:'leave' }); } catch (e) {} }
+  function leave(){
+    const wasHost = mode === 'host';
+    if (mode === 'host' && HR){
+      HR.players.forEach(p => { if (!p.local && p.conn){ try { p.conn.send({ type:'closed' }); } catch (e) {} } });
+      const pr = peer; peer = null;
+      HR = null; mode = null;
+      setTimeout(() => { try { pr && pr.destroy(); } catch (e) {} }, 400);
+    } else if (mode === 'guest'){
+      try { if (conn) conn.send({ type:'act', action:{ type:'leave' } }); } catch (e) {}
+      const pr = peer, c = conn;
+      store.del('daifugo:session');
+      clearTimeout(guest.timer);
+      peer = null; conn = null; mode = null;
+      setTimeout(() => { try { c && c.close(); } catch (e) {} try { pr && pr.destroy(); } catch (e) {} }, 300);
+    }
     toMenu();
   }
 
-  /* ---------- 画面の切り替え ---------- */
   function showScreen(n){
     $('menu').hidden = n !== 'menu';
     $('roomlobby').hidden = n !== 'roomlobby';
@@ -483,7 +1065,6 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     document.title = (V.phase === 'play' && V.turn === me ? '▶ あなたの番｜' : '') + '大富豪';
   }
 
-  /* ---------- 描画 ---------- */
   function cardHTML(c, o = {}){
     const joker = c.s === 'J';
     const red = joker || c.s === 'H' || c.s === 'D';
@@ -509,6 +1090,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     $('lb-list').innerHTML = html;
     $('lb-start').hidden = !V.isHost;
     $('lb-wait').hidden = V.isHost;
+    $('lb-hostnote').hidden = !V.isHost;
   }
 
   function renderSeats(){
@@ -567,8 +1149,16 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     cards.forEach((c,i) => { c.style.marginLeft = i ? m + 'px' : '0'; });
   }
 
-  const secsLeft = () => V && V.msLeft != null ? Math.max(0, Math.ceil((V.msLeft - (Date.now() - recvAt)) / 1000)) : null;
+  const secsLeft = () => (V && V.msLeft != null ? Math.max(0, Math.ceil((V.msLeft - (Date.now() - recvAt)) / 1000)) : null);
   const clock = () => { const s = secsLeft(); return s != null && s <= 20 ? `（あと${s}秒で自動進行）` : ''; };
+
+  function localCheck(cards){
+    if (!V.field){
+      const g0 = { field:null, rev:V.rev };
+      return validate(g0, cards);
+    }
+    return validate({ field:V.field, rev:V.rev }, cards);
+  }
 
   function renderControls(){
     if (!V || V.phase === 'lobby') return;
@@ -616,23 +1206,6 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     bs.hidden = !showPass; bs.disabled = !canPass;
   }
 
-  /* 手元での事前チェック（最終判定はサーバー） */
-  function localCheck(cards){
-    const n = cards.length;
-    if (!n) return { ok:false, reason:'' };
-    if (n > 4) return { ok:false, reason:'一度に出せるのは4枚までです' };
-    const nat = cards.filter(c => c.s !== 'J');
-    if (nat.some(c => c.r !== nat[0].r)) return { ok:false, reason:'同じ数字のカードだけまとめて出せます' };
-    const rank = nat.length ? nat[0].r : 16;
-    const f = V.field;
-    if (!f) return { ok:true };
-    if (f.count === 1 && f.cards[0].s === 'J' && n === 1 && cards[0].s === 'S' && cards[0].r === 3) return { ok:true };
-    if (n !== f.count) return { ok:false, reason:`場は${f.count}枚です。${f.count}枚で出してください` };
-    const st = r => r === 16 ? 16 : (V.rev ? 18 - r : r);
-    if (st(rank) <= st(f.rank)) return { ok:false, reason:'場より強いカードを選んでください' };
-    return { ok:true };
-  }
-
   function render(drop){
     document.body.classList.toggle('rev', !!V.rev);
     $('game-no').textContent = `第${V.gameNo}戦`;
@@ -655,10 +1228,8 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
   }
-
   function menuMsg(t){ $('menu-msg').textContent = t || ''; }
 
-  /* ---------- モーダル ---------- */
   function showModal(html, kind){
     const m = $('modal');
     modalKind = kind || '';
@@ -694,11 +1265,12 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
         <li>手札を最初になくした人が大富豪です。2戦目からは順位に応じてカードを交換し、大貧民から始まります。</li>
         <li>操作：カードをタップして選び、「出す」を押します。</li>
         <li>1手の持ち時間は60秒です。時間切れや、通信が切れたまま戻らないときは、自動で進行します。画面を開き直せば、そのまま席に戻れます。</li>
+        <li>部屋をつくった人（ホスト）の画面がゲームを進めます。ホストが画面を閉じる、またはスマホの画面が消えると、全員のゲームが止まります。</li>
       </ul>
       <div class="row"><button class="btn primary" id="m-close" type="button">閉じる</button></div>`, 'rules');
   }
 
-  /* ---------- 入力 ---------- */
+  /* ======================= 入力 ======================= */
   $('hand').addEventListener('click', e => {
     const b = e.target.closest('.card');
     if (!b || !V || me < 0) return;
@@ -709,25 +1281,25 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 
   $('btn-play').addEventListener('click', () => {
     if (!V) return;
-    if (V.phase === 'over'){ if (V.isHost) act('next'); return; }
+    if (V.phase === 'over'){ if (V.isHost) doAct('next'); return; }
     const sel = selectedCards();
     if (V.phase === 'exchange'){
       if (!V.exNeed || V.exSent || sel.length !== V.exNeed) return;
       const ids = sel.map(c => c.id);
       L.sel.clear();
-      act('exchange', { ids });
+      doAct('exchange', { ids });
       return;
     }
     if (V.phase !== 'play' || V.turn !== me || !localCheck(sel).ok) return;
     const ids = sel.map(c => c.id);
     L.sel.clear();
-    act('play', { ids });
+    doAct('play', { ids });
   });
 
   $('btn-pass').addEventListener('click', () => {
     if (!V || V.phase !== 'play' || V.turn !== me || !V.field) return;
     L.sel.clear();
-    act('pass');
+    doAct('pass');
   });
 
   $('btn-rules').addEventListener('click', showRules);
@@ -735,8 +1307,8 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   $('modal').addEventListener('click', e => {
     const t = e.target.id;
     if (t === 'modal' || t === 'm-close') closeModal();
-    if (t === 'm-next'){ closeModal(); act('next'); }
-    if (t === 'm-reset'){ closeModal(); act('reset'); }
+    if (t === 'm-next'){ closeModal(); doAct('next'); }
+    if (t === 'm-reset'){ closeModal(); doAct('reset'); }
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) closeModal(); });
   window.addEventListener('resize', () => { if (V && V.phase !== 'lobby' && !$('game').hidden) fitHand(); });
@@ -744,11 +1316,11 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 
   $('name').value = myName;
   $('name').addEventListener('input', e => { myName = e.target.value; store.set('daifugo:name', myName); });
-  $('m-create').addEventListener('click', createRoom);
-  $('m-solo').addEventListener('click', startSolo);
+  $('m-create').addEventListener('click', () => createRoom(false));
+  $('m-solo').addEventListener('click', () => createRoom(true));
   $('m-join').addEventListener('click', () => joinRoom($('code').value));
   $('code').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom($('code').value); });
-  $('lb-start').addEventListener('click', () => act('start'));
+  $('lb-start').addEventListener('click', () => doAct('start'));
   $('lb-share').addEventListener('click', async () => {
     const url = location.origin + location.pathname + '?room=' + (V ? V.code : '');
     try {
@@ -761,15 +1333,14 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     catch (e) { toast(url); }
   });
 
-  /* ---------- 起動 ---------- */
+  /* ======================= 起動 ======================= */
   showScreen('menu');
   const qRoom = new URLSearchParams(location.search).get('room');
   let saved = null;
   try { saved = JSON.parse(store.get('daifugo:session') || 'null'); } catch (e) {}
-  if (saved && saved.code && saved.token && (!qRoom || qRoom.toUpperCase() === saved.code)){
-    session = saved;
-    menuMsg('前回の部屋に接続しています…');
-    connect();
+  if (saved && saved.code && saved.token && (!qRoom || qRoom.toUpperCase() === saved.code) && window.Peer){
+    $('code').value = saved.code;
+    joinRoom(saved.code);
   } else if (qRoom){
     $('code').value = qRoom.toUpperCase().slice(0, 4);
     $('menu-note').textContent = `部屋 ${qRoom.toUpperCase().slice(0, 4)} に招待されています。ニックネームを入れて「参加」を押してください。`;
