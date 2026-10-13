@@ -351,6 +351,12 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     set(k,v){ try { localStorage.setItem(k, v); } catch (e) {} },
     del(k){ try { localStorage.removeItem(k); } catch (e) {} }
   };
+  // 部屋の「再接続用の控え」は、このタブだけに保存する（別のタブ・別の部屋と混ざらないように）
+  const sstore = {
+    get(k){ try { return sessionStorage.getItem(k); } catch (e) { return null; } },
+    set(k,v){ try { sessionStorage.setItem(k, v); } catch (e) {} },
+    del(k){ try { sessionStorage.removeItem(k); } catch (e) {} }
+  };
   const randInt = n => {
     try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; }
     catch (e) { return Math.floor(Math.random() * n); }
@@ -479,7 +485,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 
   function viewFor(room, p){
     const g = room.g;
-    const v = { code:room.code, phase:g.phase, gameNo:g.gameNo, isHost:p.local, seq:g.seq, fx:g.fx, score:g.score, prevOrder:g.prevOrder };
+    const v = { code:room.code, rid:room.rid, phase:g.phase, gameNo:g.gameNo, isHost:p.local, seq:g.seq, fx:g.fx, score:g.score, prevOrder:g.prevOrder };
     if (g.phase === 'lobby'){
       v.players = room.players.map(q => ({ name:q.name, host:q.local, you:q.id === p.id, connected:q.online }));
       return v;
@@ -805,9 +811,10 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       return;
     }
     teardownAll();
+    sstore.del(SESSION_KEY);
     mode = 'host'; L = newLocal(); V = null;
     const hp = newPlayer(nameNow() || (solo ? 'あなた' : 'ホスト'), true);
-    HR = { code:'', players:[hp], hostId:hp.id, g:newGameState(), timer:null, deadlineSeq:-1, deadlineAt:0 };
+    HR = { code:'', rid:randToken().slice(0, 10), players:[hp], hostId:hp.id, g:newGameState(), timer:null, deadlineSeq:-1, deadlineAt:0 };
     if (solo){ startRoom(HR); return; }
     menuMsg('部屋をつくっています…');
     openHostPeer(0);
@@ -873,6 +880,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 
   function handleJoin(room, c, msg){
     const g = room.g;
+    if (msg.rid && msg.rid !== room.rid){ c.send({ type:'error', fatal:true, message:'この部屋はすでに終了しています（ホストが部屋を作り直しました）' }); return; }
     const existing = msg.token && room.players.find(q => !q.local && q.id === msg.token);
     if (existing){
       if (existing.conn && existing.conn !== c){ const old = existing.conn; existing.conn = null; try { old.close(); } catch (e) {} }
@@ -891,56 +899,83 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   }
 
   /* --- ゲスト --- */
-  function joinRoom(raw){
+  const SESSION_KEY = 'daifugo:session';
+  const SESSION_MAX_MS = 3 * 60 * 60 * 1000;
+
+  function readSession(){
+    try {
+      const s = JSON.parse(sstore.get(SESSION_KEY) || 'null');
+      if (s && s.code && s.token && Date.now() - (s.t || 0) < SESSION_MAX_MS) return s;
+    } catch (e) {}
+    return null;
+  }
+  function writeSession(g){
+    sstore.set(SESSION_KEY, JSON.stringify({ code:g.code, token:g.token, rid:g.rid || '', t:Date.now() }));
+  }
+
+  function joinRoom(raw, auto){
     const c = String(raw || '').trim().toUpperCase();
     if (!/^[A-Z0-9]{4}$/.test(c)){ menuMsg('4文字のコードを入力してください'); return; }
     if (!window.Peer){ menuMsg('オンライン機能を読み込めませんでした。通信状況を確認して、ページを開き直してください'); return; }
     teardownAll();
     mode = 'guest'; L = newLocal(); V = null;
-    let tok = '';
-    try { const s = JSON.parse(store.get('daifugo:session') || 'null'); if (s && s.code === c) tok = s.token; } catch (e) {}
-    guest = { code:c, token:tok, tries:0, timer:null };
+    let tok = '', rid = '';
+    const s = readSession();
+    if (s && s.code === c){ tok = s.token; rid = s.rid || ''; }
+    guest = { code:c, token:tok, rid, tries:0, timer:null, retrying:false, auto:!!auto };
     menuMsg('接続しています…');
     connectGuest();
   }
 
   function connectGuest(){
     const my = guest;
-    if (peer){ try { peer.destroy(); } catch (e) {} peer = null; }
-    conn = null;
+    // 古い接続は「無効」の印をつけてから閉じる（閉じたときに再接続が連鎖しないように）
+    const oldC = conn, oldP = peer;
+    conn = null; peer = null;
+    if (oldC) oldC.__stale = true;
+    if (oldP){ try { oldP.destroy(); } catch (e) {} }
     let p;
     try { p = new window.Peer(); }
     catch (e) { guestFailed('オンライン機能を開始できませんでした'); return; }
     peer = p;
-    let joined = false;
     p.on('open', () => {
-      if (guest !== my) return;
+      if (guest !== my || peer !== p) return;
       const c = p.connect(PEER_PREFIX + my.code, { reliable:true, serialization:'json' });
       conn = c;
-      c.on('open', () => { if (guest === my) c.send({ type:'join', name:nameNow(), token:my.token }); });
+      const live = () => guest === my && conn === c && !c.__stale && mode === 'guest';
+      c.on('open', () => { if (live()) c.send({ type:'join', name:nameNow(), token:my.token, rid:my.rid }); });
       c.on('data', msg => safe(() => {
-        if (guest !== my || !msg) return;
+        if (!live() || !msg) return;
         if (msg.type === 'joined'){
-          joined = true; my.tries = 0; my.token = msg.token;
-          store.set('daifugo:session', JSON.stringify({ code:my.code, token:msg.token }));
+          my.tries = 0; my.token = msg.token; my.retrying = false;
+          clearTimeout(my.timer);
+          writeSession(my);
           menuMsg('');
         } else if (msg.type === 'view'){
-          deliver(msg.view);
+          const v = msg.view;
+          if (!v) return;
+          if (v.code && v.code !== my.code) return;               // 別の部屋の情報は受け取らない
+          if (v.rid){
+            if (!my.rid){ my.rid = v.rid; writeSession(my); }
+            else if (my.rid !== v.rid){ guestFailed('ホストが部屋を作り直したため、この部屋は終了しました', true); return; }
+          }
+          deliver(v);
         } else if (msg.type === 'error'){
           if (msg.fatal || !V){ guestFailed(msg.message, true); } else toast(msg.message);
         } else if (msg.type === 'closed'){
           guestFailed('ホストが部屋を閉じました', true);
         }
       }));
-      c.on('close', () => { if (guest === my && mode === 'guest') guestLost(); });
-      c.on('error', () => { if (guest === my && mode === 'guest') guestLost(); });
+      c.on('close', () => { if (live()) guestLost(); });
+      c.on('error', () => { if (live()) guestLost(); });
     });
     p.on('error', e => {
-      if (guest !== my) return;
+      if (guest !== my || peer !== p || mode !== 'guest') return;
       if (e.type === 'peer-unavailable'){
         if (V) guestLost();
+        else if (my.auto) guestFailed('前の部屋は終了していました', true);
         else guestFailed('部屋が見つかりません。コードと、ホストの画面が開いているかを確かめてください', true);
-      } else if (!joined) {
+      } else if (!V) {
         guestLost();
       }
     });
@@ -948,15 +983,20 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 
   function guestLost(){
     const my = guest;
+    if (!my || my.retrying) return;                 // すでに再接続を待っているなら何もしない
     if (my.tries >= 15){ guestFailed('ホストにつながりません。ホストが画面を閉じた可能性があります', true); return; }
     my.tries++;
+    my.retrying = true;
     $('conn-chip').hidden = false;
     clearTimeout(my.timer);
-    my.timer = setTimeout(() => { if (guest === my && mode === 'guest') connectGuest(); }, 2000);
+    my.timer = setTimeout(() => {
+      my.retrying = false;
+      if (guest === my && mode === 'guest') connectGuest();
+    }, 2000);
   }
 
   function guestFailed(message, clear){
-    if (clear) store.del('daifugo:session');
+    if (clear) sstore.del(SESSION_KEY);
     teardownAll();
     toMenu();
     menuMsg(message || '');
@@ -1012,7 +1052,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     } else if (mode === 'guest'){
       try { if (conn) conn.send({ type:'act', action:{ type:'leave' } }); } catch (e) {}
       const pr = peer, c = conn;
-      store.del('daifugo:session');
+      sstore.del(SESSION_KEY);
       clearTimeout(guest.timer);
       peer = null; conn = null; mode = null;
       setTimeout(() => { try { c && c.close(); } catch (e) {} try { pr && pr.destroy(); } catch (e) {} }, 300);
@@ -1336,11 +1376,10 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   /* ======================= 起動 ======================= */
   showScreen('menu');
   const qRoom = new URLSearchParams(location.search).get('room');
-  let saved = null;
-  try { saved = JSON.parse(store.get('daifugo:session') || 'null'); } catch (e) {}
-  if (saved && saved.code && saved.token && (!qRoom || qRoom.toUpperCase() === saved.code) && window.Peer){
+  const saved = readSession();
+  if (saved && (!qRoom || qRoom.toUpperCase() === saved.code) && window.Peer){
     $('code').value = saved.code;
-    joinRoom(saved.code);
+    joinRoom(saved.code, true);
   } else if (qRoom){
     $('code').value = qRoom.toUpperCase().slice(0, 4);
     $('menu-note').textContent = `部屋 ${qRoom.toUpperCase().slice(0, 4)} に招待されています。ニックネームを入れて「参加」を押してください。`;
