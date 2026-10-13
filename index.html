@@ -541,6 +541,11 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   }
 
   function newGame(room){
+  console.trace('[DEBUG] newGame called', {
+  phase: room.g.phase,
+  gameNo: room.g.gameNo,
+  time: new Date().toISOString()
+});
     const g = room.g;
     const deck = shuffle(makeDeck());
     const hands = [[],[],[],[]];
