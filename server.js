@@ -527,8 +527,7 @@ function findAuth(code, token) {
   return { room, player };
 }
 
-const INDEX = path.join(__dirname, 'public', 'index.html');
-
+const INDEX = path.join(__dirname, 'index.html');
 async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
