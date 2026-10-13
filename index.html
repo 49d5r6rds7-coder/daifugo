@@ -289,7 +289,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       <p class="msg" id="menu-msg" role="status"></p>
       <p class="note" id="menu-note">部屋をつくると、友だちに送れるリンクができます。リンクを開くだけで参加できます。</p>
       <p class="note">部屋をつくった人（ホスト）の画面がゲームを進めます。ホストが画面を閉じると、その部屋は終わります。</p>
-      <p class="note" id="ver" style="opacity:.55">バージョン 2026-10-13 c</p>
+      <p class="note" id="ver" style="opacity:.55">バージョン 2026-10-13 d</p>
     </div>
   </section>
 
@@ -915,7 +915,9 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     sstore.set(SESSION_KEY, JSON.stringify({ code:g.code, token:g.token, rid:g.rid || '', t:Date.now() }));
   }
 
-  function joinRoom(raw, auto){
+  function joinRoom(raw, auto, userInitiated = false){
+    // 安全策：参加処理はクリックまたはEnterキーからのみ許可する。ページ起動・タイマー等からの呼び出しでは参加しない。
+    if (!userInitiated){ console.warn('joinRoom blocked: no explicit user action'); return; }
     const c = String(raw || '').trim().toUpperCase();
     if (!/^[A-Z0-9]{4}$/.test(c)){ menuMsg('4文字のコードを入力してください'); return; }
     if (!window.Peer){ menuMsg('オンライン機能を読み込めませんでした。通信状況を確認して、ページを開き直してください'); return; }
@@ -1361,8 +1363,8 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   $('name').addEventListener('input', e => { myName = e.target.value; store.set('daifugo:name', myName); });
   $('m-create').addEventListener('click', () => createRoom(false));
   $('m-solo').addEventListener('click', () => createRoom(true));
-  $('m-join').addEventListener('click', () => joinRoom($('code').value));
-  $('code').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom($('code').value); });
+  $('m-join').addEventListener('click', () => joinRoom($('code').value, false, true));
+  $('code').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom($('code').value, false, true); });
   $('lb-start').addEventListener('click', () => doAct('start'));
   $('lb-share').addEventListener('click', async () => {
     const url = location.origin + location.pathname + '?room=' + (V ? V.code : '');
@@ -1389,7 +1391,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   }
   $('m-last').addEventListener('click', () => {
     const s = readSession();
-    if (s) joinRoom(s.code, true);
+    if (s) joinRoom(s.code, true, true);
     else refreshLast();
   });
 
