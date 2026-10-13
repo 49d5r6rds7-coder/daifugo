@@ -284,10 +284,12 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
           <input id="code" maxlength="4" placeholder="コード" autocomplete="off" autocapitalize="characters" aria-label="部屋コード">
           <button class="btn" id="m-join" type="button">参加</button>
         </div>
+        <button class="btn" id="m-last" type="button" hidden></button>
       </div>
       <p class="msg" id="menu-msg" role="status"></p>
       <p class="note" id="menu-note">部屋をつくると、友だちに送れるリンクができます。リンクを開くだけで参加できます。</p>
       <p class="note">部屋をつくった人（ホスト）の画面がゲームを進めます。ホストが画面を閉じると、その部屋は終わります。</p>
+      <p class="note" id="ver" style="opacity:.55">バージョン 2026-10-13 c</p>
     </div>
   </section>
 
@@ -1040,6 +1042,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     closeModal();
     document.title = '大富豪';
     showScreen('menu');
+    refreshLast();
   }
 
   function leave(){
@@ -1373,14 +1376,28 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     catch (e) { toast(url); }
   });
 
+  // 前の部屋に戻るのは、ボタンを押したときだけ（ページを開いただけでは入らない）
+  function refreshLast(){
+    const s = readSession();
+    const b = $('m-last');
+    if (s && window.Peer){
+      b.hidden = false;
+      b.textContent = `前の部屋（${s.code}）にもどる`;
+    } else {
+      b.hidden = true;
+    }
+  }
+  $('m-last').addEventListener('click', () => {
+    const s = readSession();
+    if (s) joinRoom(s.code, true);
+    else refreshLast();
+  });
+
   /* ======================= 起動 ======================= */
   showScreen('menu');
   const qRoom = new URLSearchParams(location.search).get('room');
-  const saved = readSession();
-  if (saved && (!qRoom || qRoom.toUpperCase() === saved.code) && window.Peer){
-    $('code').value = saved.code;
-    joinRoom(saved.code, true);
-  } else if (qRoom){
+  refreshLast();
+  if (qRoom){
     $('code').value = qRoom.toUpperCase().slice(0, 4);
     $('menu-note').textContent = `部屋 ${qRoom.toUpperCase().slice(0, 4)} に招待されています。ニックネームを入れて「参加」を押してください。`;
     (myName ? $('m-join') : $('name')).focus();
