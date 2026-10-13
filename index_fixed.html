@@ -1,0 +1,1409 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050f0c">
+<meta name="description" content="友だちとオンラインで遊べる大富豪。リンクを送るだけで参加できます。">
+<title>大富豪</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%230d2a22'/%3E%3Ctext x='32' y='46' font-size='38' text-anchor='middle' fill='%23d6b25e'%3E%E2%99%A0%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Shippori+Mincho:wght@500;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --felt:#103229; --felt-edge:#050f0c;
+  --ink:#f3ecd8; --muted:#a9b9ad;
+  --gold-hi:#f6e3a1; --gold:#d6b25e; --gold-lo:#8f6d26;
+  --gold-grad:linear-gradient(135deg,#f6e3a1 0%,#d6b25e 42%,#9a762a 68%,#ecd48c 100%);
+  --gold-line:rgba(214,178,94,.5); --gold-faint:rgba(214,178,94,.22);
+  --ivory:#faf6ea; --ink-card:#17181d; --crimson:#a3212b;
+  --plate:rgba(2,10,8,.55); --back:#14392f;
+  --serif:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif;
+  --didone:"Cormorant Garamond","Shippori Mincho","Hiragino Mincho ProN",serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --felt:#0d2a22; --felt-edge:#040c09; }
+}
+:root[data-theme="dark"]{ --felt:#0d2a22; --felt-edge:#040c09; }
+body.rev{ --felt:#4a1426; --felt-edge:#1a050d; --muted:#d3b3b9; --back:#5a1a2d; }
+html{ scroll-padding-top:env(safe-area-inset-top,0px); height:100%; }
+*,*::before,*::after{ box-sizing:inherit; }
+body{
+  height:100%; margin:0; color:var(--ink);
+  font-family:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+  background:radial-gradient(110% 85% at 50% 38%, var(--felt) 0%, var(--felt-edge) 78%);
+  background-color:var(--felt-edge);
+  transition:background-color .7s;
+}
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; opacity:.09; mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .55 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
+}
+body::after{
+  content:""; position:fixed; inset:8px; pointer-events:none; z-index:1;
+  border:1px solid var(--gold-line); border-radius:3px;
+  box-shadow:inset 0 0 0 4px transparent, inset 0 0 0 5px var(--gold-faint);
+}
+button{ font:inherit; color:inherit; }
+.app{
+  position:relative; z-index:2; max-width:880px; min-height:100%; margin:0 auto;
+  padding:22px 20px 22px; display:grid; grid-template-rows:auto auto 1fr auto; gap:14px;
+}
+.bar{ display:flex; align-items:center; gap:12px; }
+.bar h1{
+  margin:0; font-family:var(--serif); font-weight:800; font-size:27px; letter-spacing:.34em; padding-left:.34em;
+  background:var(--gold-grad); -webkit-background-clip:text; background-clip:text; color:transparent; -webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 1px 0 rgba(0,0,0,.6));
+}
+.chips{ display:flex; gap:8px; align-items:center; flex:1; }
+.chip{ font-family:var(--serif); font-size:13px; color:var(--gold); border:1px solid var(--gold-line); border-radius:2px; padding:3px 12px; letter-spacing:.12em; }
+.chip.rev{ color:#2a0a10; background:var(--gold-grad); border-color:transparent; font-weight:800; }
+.chip[hidden]{ display:none; }
+.ghost-btn{ background:none; border:1px solid var(--gold-line); border-radius:2px; padding:6px 14px; font-family:var(--serif); font-size:14px; letter-spacing:.12em; cursor:pointer; color:var(--gold); }
+.ghost-btn:hover{ border-color:var(--gold-hi); color:var(--gold-hi); }
+
+.seats{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.seat{
+  position:relative; background:linear-gradient(180deg, rgba(0,0,0,.28), var(--plate));
+  border:1px solid var(--gold-faint); border-radius:3px; padding:9px 11px; min-width:0;
+  transition:box-shadow .25s, border-color .25s, opacity .3s;
+}
+.seat::before{ content:""; position:absolute; inset:3px; border:1px solid rgba(214,178,94,.1); border-radius:2px; pointer-events:none; }
+.seat.turn{ border-color:var(--gold-hi); box-shadow:0 0 0 1px var(--gold), 0 0 22px -2px rgba(246,227,161,.38); }
+.seat.out{ opacity:.5; }
+.seat .name{ font-family:var(--serif); font-weight:700; font-size:17px; letter-spacing:.1em; color:var(--gold-hi); }
+.seat .role{ font-size:12px; color:var(--muted); min-height:1.3em; letter-spacing:.04em; }
+.seat .row{ display:flex; align-items:center; justify-content:space-between; gap:6px; margin-top:6px; }
+.backs{ display:flex; height:18px; min-width:0; }
+.backs i{
+  flex:none; width:11px; height:16px; margin-left:-5px; border-radius:2px;
+  border:1px solid var(--gold-lo);
+  background:repeating-linear-gradient(45deg, rgba(214,178,94,.55) 0 1px, transparent 1px 4px), var(--back);
+}
+.backs i:first-child{ margin-left:0; }
+.count{ font-family:var(--didone); font-weight:700; font-size:17px; color:var(--gold); font-variant-numeric:lining-nums tabular-nums; }
+
+.field{ position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; min-height:210px; padding:14px 0; }
+.field::before, .field::after{ content:""; position:absolute; pointer-events:none; border-radius:50%; }
+.field::before{ inset:0 4%; border:1px solid var(--gold-faint); }
+.field::after{ inset:7px calc(4% + 9px); border:1px solid rgba(214,178,94,.1); }
+.stage{ position:relative; z-index:1; display:flex; flex-direction:column; align-items:center; gap:8px; }
+.stage .cards{ display:flex; gap:6px; justify-content:center; }
+.stage.ghost .cards{ opacity:.3; filter:saturate(.5); }
+.cap{ font-family:var(--serif); font-size:14px; letter-spacing:.08em; color:var(--muted); }
+.stage:not(.ghost):not(.empty) .cap{ color:var(--gold-hi); }
+.log{ position:relative; z-index:1; list-style:none; margin:0; padding:0; display:flex; flex-direction:column; align-items:center; gap:1px; font-size:12.5px; color:var(--muted); min-height:5em; }
+.log li:nth-last-child(n+3){ opacity:.5; }
+.log li:last-child{ color:var(--ink); }
+.drop .card{ animation:drop .26s cubic-bezier(.2,.8,.3,1); }
+@keyframes drop{ from{ transform:translateY(-28px) scale(1.1); opacity:.15; } to{ transform:none; opacity:1; } }
+
+.card{
+  --cw:56px;
+  position:relative; flex:none; display:block; padding:0; margin:0;
+  width:var(--cw); height:calc(var(--cw)*1.45);
+  background:linear-gradient(160deg,#fffdf6 0%,var(--ivory) 55%,#efe7d0 100%);
+  color:var(--ink-card);
+  border:1px solid rgba(60,45,15,.55); border-radius:6px;
+  box-shadow:0 1px 0 rgba(255,255,255,.5) inset, 0 10px 14px -8px rgba(0,0,0,.85), 0 2px 3px rgba(0,0,0,.4);
+  font-family:var(--didone); text-align:center;
+}
+.card::before{ content:""; position:absolute; inset:3px; border:1px solid rgba(143,109,38,.5); border-radius:3px; pointer-events:none; }
+.card.red{ color:var(--crimson); }
+.card .idx{ position:absolute; top:calc(var(--cw)*.09); left:0; width:calc(var(--cw)*.44); line-height:1; font-weight:700; font-size:calc(var(--cw)*.34); font-variant-numeric:lining-nums; }
+.card .idx small{ display:block; font-size:.74em; margin-top:2px; font-family:"Zen Kaku Gothic New",sans-serif; }
+.card .pip{ position:absolute; left:0; right:0; bottom:calc(var(--cw)*.1); line-height:1; font-size:calc(var(--cw)*.6); font-family:"Zen Kaku Gothic New",sans-serif; }
+.card.joker{ background:linear-gradient(160deg,#fffdf6 0%,#f6ecd0 60%,#e9dcb4 100%); }
+.card.joker .idx{ writing-mode:vertical-rl; font-size:calc(var(--cw)*.17); letter-spacing:.14em; top:calc(var(--cw)*.1); left:calc(var(--cw)*.1); width:auto; font-weight:700; }
+.card.joker .pip{ background:var(--gold-grad); -webkit-background-clip:text; background-clip:text; color:transparent; -webkit-text-fill-color:transparent; font-size:calc(var(--cw)*.68); }
+.field .card{ --cw:60px; }
+button.card{ cursor:pointer; transition:transform .14s ease, box-shadow .14s ease; }
+button.card.sel{
+  transform:translateY(-20px);
+  box-shadow:0 0 0 2px var(--gold-hi), 0 0 18px 2px rgba(246,227,161,.55), 0 14px 16px -8px rgba(0,0,0,.8);
+}
+button.card:focus-visible{ outline:3px solid #fff; outline-offset:2px; z-index:3; }
+button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; width:11px; height:11px; border-radius:50%; background:var(--gold-grad); border:2px solid var(--felt-edge); }
+
+.me{ display:flex; flex-direction:column; gap:8px; }
+.mebar{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap; }
+.mebar .who{ font-family:var(--serif); font-weight:700; font-size:18px; letter-spacing:.14em; color:var(--gold-hi); }
+.mebar .who span{ font-family:"Zen Kaku Gothic New",sans-serif; font-weight:400; font-size:13px; letter-spacing:.04em; color:var(--muted); margin-left:10px; }
+.hint{ font-size:14px; min-height:1.4em; color:var(--ink); }
+.hint.bad{ color:#f0b3a6; }
+.hand{ display:flex; justify-content:center; padding:24px 2px 8px; min-height:calc(1.45*52px + 34px); }
+.hand .card{ --cw:52px; }
+.actions{ display:flex; gap:12px; justify-content:center; }
+.btn{
+  min-height:50px; min-width:124px; padding:0 26px; border-radius:2px; cursor:pointer;
+  border:1px solid var(--gold-line); background:rgba(0,0,0,.3);
+  font-family:var(--serif); font-weight:700; font-size:17px; letter-spacing:.2em; color:var(--gold-hi);
+}
+.btn:hover:not(:disabled){ border-color:var(--gold-hi); }
+.btn.primary{
+  background:var(--gold-grad); color:#2a1d05; border-color:transparent;
+  box-shadow:0 1px 0 rgba(255,255,255,.55) inset, 0 8px 16px -8px rgba(0,0,0,.8);
+  text-shadow:0 1px 0 rgba(255,255,255,.35);
+}
+.btn:disabled{ opacity:.35; cursor:not-allowed; }
+.btn:focus-visible, .ghost-btn:focus-visible{ outline:3px solid #fff; outline-offset:2px; }
+.btn[hidden]{ display:none; }
+
+#flash{
+  position:fixed; inset:0; display:grid; place-items:center; pointer-events:none; opacity:0; z-index:20;
+  font-family:var(--serif); font-weight:800;
+  font-size:clamp(72px,24vw,190px); writing-mode:vertical-rl; letter-spacing:.16em;
+  background:var(--gold-grad); -webkit-background-clip:text; background-clip:text; color:transparent; -webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 6px 0 rgba(0,0,0,.5)) drop-shadow(0 0 30px rgba(0,0,0,.7));
+}
+#flash.go{ animation:flash 1.15s ease-out; }
+@keyframes flash{ 0%{ opacity:0; transform:scale(1.5); } 14%{ opacity:1; transform:scale(1); } 70%{ opacity:1; } 100%{ opacity:0; } }
+
+.scrim{ position:fixed; inset:0; z-index:30; display:grid; place-items:center; padding:20px; background:rgba(2,6,5,.8); }
+.scrim[hidden]{ display:none; }
+.panel{
+  position:relative; width:min(450px,100%); max-height:86%; overflow:auto; padding:26px 26px 22px; border-radius:3px;
+  background:radial-gradient(120% 100% at 50% 0%, #0f2c24, #061411); color:var(--ink);
+  border:1px solid var(--gold); box-shadow:0 0 0 5px rgba(0,0,0,.4), 0 0 0 6px var(--gold-faint), 0 30px 60px -20px #000;
+}
+.panel h2{
+  margin:0 0 14px; font-family:var(--serif); font-size:24px; letter-spacing:.2em; font-weight:800;
+  background:var(--gold-grad); -webkit-background-clip:text; background-clip:text; color:transparent; -webkit-text-fill-color:transparent;
+}
+.panel p, .panel li{ font-size:14.5px; line-height:1.8; }
+.panel ul{ margin:0; padding-left:1.2em; }
+.panel li::marker{ color:var(--gold); }
+.panel b{ color:var(--gold-hi); font-family:var(--serif); letter-spacing:.06em; }
+.panel .row{ display:flex; gap:10px; margin-top:18px; flex-wrap:wrap; }
+.result{ list-style:none; padding:0; margin:0; }
+.result li{ display:grid; grid-template-columns:5.8em 1fr auto; gap:8px; align-items:baseline; padding:10px 4px; border-bottom:1px solid var(--gold-faint); }
+.result li.me{ color:var(--gold-hi); font-weight:700; background:linear-gradient(90deg, rgba(214,178,94,.14), transparent); }
+.result .t{ font-family:var(--serif); font-weight:800; font-size:18px; letter-spacing:.1em; color:var(--gold); }
+.result .pt{ font-family:var(--didone); font-size:15px; font-weight:700; color:var(--muted); font-variant-numeric:lining-nums tabular-nums; }
+
+@media (min-width:700px){
+  .app{ padding:30px 28px 28px; gap:18px; }
+  .bar h1{ font-size:32px; }
+  .seat{ padding:11px 16px; }
+  .field{ min-height:240px; }
+  .field .card{ --cw:76px; }
+  .hand .card{ --cw:72px; }
+  .hand{ min-height:calc(1.45*72px + 34px); }
+  .backs i{ width:13px; height:19px; margin-left:-6px; }
+}
+@media (prefers-reduced-motion: reduce){
+  .drop .card{ animation:none; }
+  #flash.go{ animation:flashfade 1.15s linear; }
+  @keyframes flashfade{ 0%{opacity:0} 10%{opacity:1} 75%{opacity:1} 100%{opacity:0} }
+  body, button.card{ transition:none; }
+}
+
+/* ---------- online / menu additions ---------- */
+.app{ display:flex; flex-direction:column; gap:14px; }
+.bar{ flex-wrap:wrap; }
+.chips{ min-width:0; flex-wrap:wrap; }
+.screen[hidden], #game[hidden]{ display:none; }
+#game{ flex:1; display:grid; grid-template-rows:auto 1fr auto; gap:14px; }
+.menu{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:8px 0 24px; }
+.slab{
+  position:relative; width:min(420px,100%); padding:24px 22px 20px; text-align:center;
+  background:linear-gradient(180deg, rgba(0,0,0,.25), var(--plate));
+  border:1px solid var(--gold-line); border-radius:3px;
+}
+.slab::before{ content:""; position:absolute; inset:4px; border:1px solid rgba(214,178,94,.12); border-radius:2px; pointer-events:none; }
+.slab label, .lead{ display:block; font-family:var(--serif); font-size:13px; letter-spacing:.3em; color:var(--muted); margin:0 0 8px; }
+.slab input{
+  width:100%; min-height:48px; padding:0 14px; border-radius:2px; text-align:center;
+  background:rgba(0,0,0,.4); border:1px solid var(--gold-line); color:var(--ink);
+  font-family:var(--serif); font-size:18px; letter-spacing:.14em;
+}
+.slab input::placeholder{ color:rgba(169,185,173,.55); }
+.slab input:focus-visible{ outline:2px solid var(--gold-hi); outline-offset:2px; }
+.stack{ display:flex; flex-direction:column; gap:12px; margin-top:16px; }
+.stack .btn{ width:100%; }
+.sep{ display:flex; align-items:center; gap:12px; font-family:var(--serif); font-size:12.5px; letter-spacing:.3em; color:var(--gold); margin:6px 0 0; }
+.sep::before, .sep::after{ content:""; flex:1; height:1px; background:var(--gold-faint); }
+.joinrow{ display:flex; gap:10px; }
+.joinrow input{ flex:1; min-width:0; text-transform:uppercase; }
+.joinrow .btn{ width:auto; min-width:96px; }
+.msg{ min-height:1.5em; margin:12px 0 0; font-size:13.5px; color:#f0b3a6; }
+.note{ margin:8px 0 0; font-size:12.5px; line-height:1.7; color:var(--muted); }
+.codebig{
+  font-family:var(--didone); font-weight:700; font-size:64px; line-height:1.1; letter-spacing:.28em; padding-left:.28em;
+  background:var(--gold-grad); -webkit-background-clip:text; background-clip:text; color:transparent; -webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 2px 0 rgba(0,0,0,.6)); margin:2px 0 6px;
+}
+.plist{ list-style:none; margin:16px 0 0; padding:0; text-align:left; }
+.plist li{ display:flex; justify-content:space-between; gap:10px; padding:11px 8px; border-bottom:1px solid var(--gold-faint); font-family:var(--serif); font-size:17px; letter-spacing:.1em; }
+.plist li em{ font-style:normal; font-family:"Zen Kaku Gothic New",sans-serif; font-size:12.5px; letter-spacing:.04em; color:var(--gold); }
+.plist li.empty{ color:rgba(169,185,173,.5); font-size:14px; }
+.seat .tag{ font-family:"Zen Kaku Gothic New",sans-serif; font-weight:500; font-size:10.5px; letter-spacing:.06em; color:var(--muted); border:1px solid var(--gold-faint); border-radius:2px; padding:0 5px; margin-left:6px; vertical-align:2px; }
+.seat .name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mini{ background:none; border:1px solid var(--gold-faint); color:var(--muted); border-radius:2px; font-size:11.5px; padding:3px 8px; cursor:pointer; margin-top:6px; }
+.mini:hover{ border-color:var(--gold); color:var(--gold-hi); }
+.mini:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+.foot{ display:flex; justify-content:center; gap:12px; min-height:4px; margin-top:-4px; }
+.foot .mini{ margin-top:0; }
+#toast{
+  position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%); z-index:40;
+  padding:10px 18px; border-radius:2px; background:#07100d; border:1px solid var(--gold-line); color:var(--ink);
+  font-size:14px; max-width:90vw; text-align:center; opacity:0; pointer-events:none; transition:opacity .25s;
+}
+#toast.show{ opacity:1; }
+@media (min-width:700px){ .codebig{ font-size:76px; } }
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="bar">
+    <h1>大富豪</h1>
+    <div class="chips">
+      <span class="chip" id="room-chip" hidden></span>
+      <span class="chip" id="game-no" hidden></span>
+      <span class="chip rev" id="rev-chip" hidden>革命中</span>
+      <span class="chip" id="conn-chip" hidden>再接続中…</span>
+    </div>
+    <button class="ghost-btn" id="btn-rules" type="button">遊び方</button>
+    <button class="ghost-btn" id="btn-leave" type="button" hidden>退出</button>
+  </header>
+
+  <section class="screen menu" id="menu">
+    <div class="slab">
+      <label for="name">ニックネーム</label>
+      <input id="name" maxlength="8" placeholder="あなた" autocomplete="off">
+      <div class="stack">
+        <button class="btn primary" id="m-create" type="button">友だちと遊ぶ（部屋をつくる）</button>
+        <button class="btn" id="m-solo" type="button">ひとりで遊ぶ（CPU 3人）</button>
+        <div class="sep"><span>部屋に参加</span></div>
+        <div class="joinrow">
+          <input id="code" maxlength="4" placeholder="コード" autocomplete="off" autocapitalize="characters" aria-label="部屋コード">
+          <button class="btn" id="m-join" type="button">参加</button>
+        </div>
+        <button class="btn" id="m-last" type="button" hidden></button>
+      </div>
+      <p class="msg" id="menu-msg" role="status"></p>
+      <p class="note" id="menu-note">部屋をつくると、友だちに送れるリンクができます。リンクを開くだけで参加できます。</p>
+      <p class="note">部屋をつくった人（ホスト）の画面がゲームを進めます。ホストが画面を閉じると、その部屋は終わります。</p>
+      <p class="note" id="ver" style="opacity:.55">バージョン 2026-10-13 c</p>
+    </div>
+  </section>
+
+  <section class="screen menu" id="roomlobby" hidden>
+    <div class="slab">
+      <p class="lead">部屋コード</p>
+      <div class="codebig" id="lb-code"></div>
+      <div class="stack" style="margin-top:10px">
+        <button class="btn" id="lb-share" type="button">招待リンクをコピー</button>
+      </div>
+      <ul class="plist" id="lb-list"></ul>
+      <div class="stack">
+        <button class="btn primary" id="lb-start" type="button">ゲーム開始</button>
+        <p class="note" id="lb-wait" hidden>ホストが開始するのを待っています…</p>
+      </div>
+      <p class="note">最大4人。空いている席には CPU が入ります。</p>
+      <p class="note" id="lb-hostnote" hidden>遊んでいる間は、この画面を開いたままにしてください。</p>
+    </div>
+  </section>
+
+  <div id="game" hidden>
+    <section class="seats" id="seats" aria-label="対戦相手"></section>
+    <section class="field" id="field" aria-label="場"></section>
+    <section class="me">
+      <div class="mebar">
+        <div class="who" id="who"></div>
+        <div class="hint" id="hint" aria-live="polite"></div>
+      </div>
+      <div class="hand" id="hand" aria-label="あなたの手札"></div>
+      <div class="actions">
+        <button class="btn" id="btn-pass" type="button">パス</button>
+        <button class="btn primary" id="btn-play" type="button">出す</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div id="flash" aria-hidden="true"></div>
+<div id="toast" role="status"></div>
+<div class="scrim" id="modal" hidden></div>
+
+<script>
+(() => {
+  /* ======================= 定数・道具 ======================= */
+  const PEER_PREFIX = 'daifugo-oc-';
+  const DROP_MS = 8000;      // 通信が切れてから「離席」とみなすまで
+  const TURN_MS = 60000;     // 1手の持ち時間
+  const EX_MS = 45000;       // カード交換の持ち時間
+  const CPU_MS = 900;        // CPU が考える時間
+  const CPU_NAMES = ['ハルカ', 'タケル', 'ミナ'];
+  const TITLES = ['大富豪', '富豪', '貧民', '大貧民'];
+  const POINTS = [4, 3, 2, 1];
+  const SUITS = ['S', 'H', 'D', 'C'];
+  const SYM = { S:'♠', H:'♥', D:'♦', C:'♣' };
+  const SUIT_NAME = { S:'スペード', H:'ハート', D:'ダイヤ', C:'クラブ' };
+  const LABEL = r => (r <= 10 ? String(r) : { 11:'J', 12:'Q', 13:'K', 14:'A', 15:'2' }[r]);
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+  const store = {
+    get(k){ try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k,v){ try { localStorage.setItem(k, v); } catch (e) {} },
+    del(k){ try { localStorage.removeItem(k); } catch (e) {} }
+  };
+  // 部屋の「再接続用の控え」は、このタブだけに保存する（別のタブ・別の部屋と混ざらないように）
+  const sstore = {
+    get(k){ try { return sessionStorage.getItem(k); } catch (e) { return null; } },
+    set(k,v){ try { sessionStorage.setItem(k, v); } catch (e) {} },
+    del(k){ try { sessionStorage.removeItem(k); } catch (e) {} }
+  };
+  const randInt = n => {
+    try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; }
+    catch (e) { return Math.floor(Math.random() * n); }
+  };
+  const randToken = () => Array.from({ length:16 }, () => randInt(256).toString(16).padStart(2, '0')).join('');
+  const safe = fn => { try { fn(); } catch (e) { console.error(e); } };
+  class ApiError extends Error {}
+
+  /* ======================= カードとルール ======================= */
+  function makeDeck(){
+    const d = []; let id = 0;
+    for (const s of SUITS) for (let r = 3; r <= 15; r++) d.push({ id:id++, s, r });
+    d.push({ id:id++, s:'J', r:16 }, { id:id++, s:'J', r:16 });
+    return d;
+  }
+  function shuffle(a){
+    for (let i = a.length - 1; i > 0; i--){
+      const j = randInt(i + 1);
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  const byBase = (a,b) => a.r - b.r || SUITS.indexOf(a.s) - SUITS.indexOf(b.s);
+  const top = (arr,n) => arr.slice().sort((a,b) => byBase(b,a)).slice(0,n);
+  const low = (arr,n) => arr.slice().sort(byBase).slice(0,n);
+  const cardText = c => (c.s === 'J' ? 'ジョーカー' : SYM[c.s] + LABEL(c.r));
+  const cardsText = cs => cs.map(cardText).join(' ');
+  const strength = (g,r) => (r === 16 ? 16 : g.rev ? 18 - r : r);
+  const active = g => [0,1,2,3].filter(i => !g.finished.includes(i));
+  function nextActive(g,p){
+    for (let k = 1; k <= 4; k++){
+      const i = (p + k) % 4;
+      if (!g.finished.includes(i)) return i;
+    }
+    return p;
+  }
+
+  function validate(g, cards){
+    const n = cards.length;
+    if (!n) return { ok:false, reason:'' };
+    if (n > 4) return { ok:false, reason:'一度に出せるのは4枚までです' };
+    const nat = cards.filter(c => c.s !== 'J');
+    if (nat.some(c => c.r !== nat[0].r)) return { ok:false, reason:'同じ数字のカードだけまとめて出せます' };
+    const rank = nat.length ? nat[0].r : 16;
+    const f = g.field;
+    if (!f) return { ok:true, rank };
+    if (f.count === 1 && f.cards[0].s === 'J' && n === 1 && cards[0].s === 'S' && cards[0].r === 3){
+      return { ok:true, rank:3, ret:true };
+    }
+    if (n !== f.count) return { ok:false, reason:`場は${f.count}枚です。${f.count}枚で出してください` };
+    if (strength(g, rank) <= strength(g, f.rank)) return { ok:false, reason:'場より強いカードを選んでください' };
+    return { ok:true, rank };
+  }
+
+  function candidates(hand){
+    const jokers = hand.filter(c => c.s === 'J');
+    const nat = hand.filter(c => c.s !== 'J');
+    const byRank = {};
+    nat.forEach(c => (byRank[c.r] = byRank[c.r] || []).push(c));
+    const out = [];
+    for (const r in byRank){
+      const arr = byRank[r].slice().sort((a,b) => (a.s === 'S') - (b.s === 'S'));
+      const max = Math.min(4, arr.length + jokers.length);
+      for (let s = 1; s <= max; s++){
+        const useN = Math.min(s, arr.length);
+        out.push([...arr.slice(0, useN), ...jokers.slice(0, s - useN)]);
+      }
+    }
+    for (let s = 1; s <= jokers.length; s++) out.push(jokers.slice(0, s));
+    const s3 = nat.find(c => c.s === 'S' && c.r === 3);
+    if (s3) out.push([s3]);
+    return out;
+  }
+
+  function chooseCpu(g, p, mustPlay){
+    const hand = g.hands[p];
+    const legal = candidates(hand).filter(c => validate(g, c).ok);
+    if (!legal.length) return null;
+    const win = legal.find(c => c.length === hand.length);
+    if (win) return win;
+    const score = c => {
+      const v = validate(g, c);
+      const jk = c.filter(x => x.s === 'J').length;
+      return strength(g, v.rank) + jk * 6 - c.length * 0.8;
+    };
+    legal.sort((a,b) => score(a) - score(b));
+    const best = legal[0];
+    if (g.field && hand.length > 5 && !mustPlay){
+      const danger = active(g).some(i => i !== p && g.hands[i].length <= 2);
+      const v = validate(g, best);
+      const heavy = strength(g, v.rank) >= 14 || best.some(x => x.s === 'J');
+      if (!danger && heavy && Math.random() < 0.55) return null;
+    }
+    return best;
+  }
+
+  /* ======================= ホスト側：部屋とゲーム進行 =======================
+     ゲームの進行・配札・CPU は、部屋をつくった人（ホスト）のブラウザの中で動きます。 */
+  let HR = null;   // ホストが持つ部屋 { code, players, g, timer, ... }
+
+  function newGameState(){
+    return {
+      phase:'lobby', seq:0, gameNo:0, score:[0,0,0,0], prevOrder:null, seats:null,
+      hands:[[],[],[],[]], finished:[], fresh:[], log:[], field:null, ghost:null,
+      rev:false, turn:-1, passes:0, ex:null, fx:null, deadline:null
+    };
+  }
+  function cleanName(n){
+    const s = String(n == null ? '' : n).replace(/[\u0000-\u001f\u007f<>]/g, '').trim();
+    return Array.from(s).slice(0, 8).join('') || 'プレイヤー';
+  }
+  function newPlayer(name, local){
+    return { id:local ? 'host' : randToken(), name:cleanName(name), seat:-1, local:!!local, conn:null, online:!!local, dropAt:local ? null : Date.now() };
+  }
+  const playerBySeat = (room,i) => room.players.find(p => p.seat === i);
+  function absent(room,i){
+    const p = playerBySeat(room,i);
+    return !!p && !p.local && !p.online && p.dropAt != null && Date.now() - p.dropAt > DROP_MS;
+  }
+  const isAuto = (room,i) => !!room.g.seats[i].cpu || absent(room,i);
+  const curHost = room => room.players.find(p => p.local);
+  function glog(g, msg){
+    g.log.push(msg);
+    if (g.log.length > 30) g.log.splice(0, g.log.length - 30);
+  }
+
+  function viewFor(room, p){
+    const g = room.g;
+    const v = { code:room.code, rid:room.rid, phase:g.phase, gameNo:g.gameNo, isHost:p.local, seq:g.seq, fx:g.fx, score:g.score, prevOrder:g.prevOrder };
+    if (g.phase === 'lobby'){
+      v.players = room.players.map(q => ({ name:q.name, host:q.local, you:q.id === p.id, connected:q.online }));
+      return v;
+    }
+    v.you = p.seat;
+    v.seats = g.seats.map((s,i) => ({ name:s.name, cpu:!!s.cpu, away:!s.cpu && absent(room,i), count:g.hands[i].length }));
+    v.hand = p.seat >= 0 ? g.hands[p.seat] : [];
+    const mine = new Set(v.hand.map(c => c.id));
+    v.fresh = g.fresh.filter(id => mine.has(id));
+    v.field = g.field; v.ghost = g.ghost; v.rev = g.rev; v.turn = g.turn; v.finished = g.finished;
+    v.log = g.log.slice(-4);
+    v.msLeft = g.deadline ? Math.max(0, g.deadline - Date.now()) : null;
+    v.exNeed = g.ex ? (g.ex.need[p.seat] || 0) : 0;
+    v.exSent = !!(g.ex && g.ex.sub[p.seat]);
+    return v;
+  }
+
+  function broadcast(room){
+    for (const p of room.players){
+      if (!p.online) continue;
+      const view = JSON.parse(JSON.stringify(viewFor(room, p)));
+      if (p.local) deliver(view);
+      else if (p.conn){ try { p.conn.send({ type:'view', view }); } catch (e) {} }
+    }
+  }
+
+  function touch(room, fx){
+    const g = room.g;
+    g.seq++;
+    if (fx) g.fx = { seq:g.seq, text:fx };
+    schedule(room);
+    broadcast(room);
+  }
+
+  function startRoom(room){
+    const g = room.g;
+    const host = curHost(room);
+    const ordered = [host, ...room.players.filter(p => p !== host)].slice(0, 4);
+    const used = new Set();
+    g.seats = ordered.map((p,i) => {
+      let n = p.name, k = 2;
+      while (used.has(n)) n = p.name + k++;
+      used.add(n);
+      p.seat = i;
+      return { name:n, cpu:false, pid:p.id };
+    });
+    room.players = ordered;
+    let ci = 0;
+    while (g.seats.length < 4) g.seats.push({ name:CPU_NAMES[ci++], cpu:true, pid:null });
+    newGame(room);
+  }
+
+  function newGame(room){
+    const g = room.g;
+    const deck = shuffle(makeDeck());
+    const hands = [[],[],[],[]];
+    deck.forEach((c,i) => hands[i % 4].push(c));
+    hands.forEach(h => h.sort(byBase));
+    Object.assign(g, {
+      hands, field:null, ghost:null, rev:false, passes:0, finished:[], phase:'play',
+      fresh:[], log:[], ex:null, gameNo:g.gameNo + 1, turn:-1, fx:null
+    });
+    if (g.prevOrder){ startExchange(room); return; }
+    g.turn = hands.findIndex(h => h.some(c => c.s === 'D' && c.r === 3));
+    glog(g, `${g.seats[g.turn].name}が♦3を持っているので先攻です`);
+    touch(room);
+  }
+
+  function startExchange(room){
+    const g = room.g;
+    const [d,f,h,dh] = g.prevOrder;
+    const H = g.hands;
+    g.ex = { d, f, h, dh, gDh:top(H[dh], 2), gH:top(H[h], 1), need:{}, sub:{} };
+    if (!isAuto(room, d)) g.ex.need[d] = 2;
+    if (!isAuto(room, f)) g.ex.need[f] = 1;
+    if (Object.keys(g.ex.need).length){
+      g.phase = 'exchange';
+      glog(g, 'カード交換：大富豪と富豪が渡すカードを選んでいます');
+      touch(room);
+      return;
+    }
+    finishExchange(room);
+  }
+
+  const exchangeReady = g => Object.keys(g.ex.need).every(s => g.ex.sub[s]);
+
+  function finishExchange(room){
+    const g = room.g;
+    const { d, f, h, dh, gDh, gH, sub } = g.ex;
+    const H = g.hands;
+    const pick = (seat, n, fb) => {
+      const ids = sub[seat];
+      if (ids){
+        const cs = H[seat].filter(c => ids.includes(c.id));
+        if (cs.length === n) return cs;
+      }
+      return fb();
+    };
+    const giftD = pick(d, 2, () => low(H[d], 2));
+    const giftF = pick(f, 1, () => low(H[f], 1));
+    const move = (from, to, cards) => {
+      const ids = new Set(cards.map(c => c.id));
+      H[from] = H[from].filter(c => !ids.has(c.id));
+      H[to].push(...cards);
+      cards.forEach(c => g.fresh.push(c.id));
+    };
+    move(d, dh, giftD); move(dh, d, gDh);
+    move(f, h, giftF);  move(h, f, gH);
+    H.forEach(x => x.sort(byBase));
+    glog(g, 'カード交換を行いました');
+    glog(g, `${TITLES[3]}の${g.seats[dh].name}から開始`);
+    g.turn = dh; g.phase = 'play'; g.ex = null;
+    touch(room);
+  }
+
+  function doPlay(room, p, cards){
+    const g = room.g;
+    const v = validate(g, cards);
+    if (!v.ok) return false;
+    const ids = new Set(cards.map(c => c.id));
+    g.hands[p] = g.hands[p].filter(c => !ids.has(c.id));
+    const own = new Set(g.hands[p].map(c => c.id));
+    g.fresh = g.fresh.filter(id => !ids.has(id) && !own.has(id));
+    const shown = cards.slice().sort(byBase);
+    const name = g.seats[p].name;
+    g.ghost = null;
+    g.field = { cards:shown, count:cards.length, rank:v.rank, owner:p };
+    g.passes = 0;
+    glog(g, `${name}：${cardsText(shown)}${v.ret ? '（スペ3返し）' : ''}`);
+
+    let fx = '';
+    if (cards.length >= 4){
+      g.rev = !g.rev;
+      glog(g, g.rev ? '革命！ カードの強さが逆転' : '革命返し！ 強さが元に戻った');
+      fx = '革命';
+    }
+    let out = false;
+    if (g.hands[p].length === 0){
+      g.finished.push(p);
+      out = true;
+      glog(g, `${name}があがり（${TITLES[g.finished.length - 1]}）`);
+    }
+    if (active(g).length <= 1){ endGame(room, fx); return true; }
+
+    let next;
+    if (v.rank === 8 && !v.ret){
+      g.ghost = { cards:shown, owner:p, note:`${name}の八切り` };
+      g.field = null;
+      glog(g, '八切り！ 場が流れた');
+      if (!fx) fx = '八切り';
+      next = out ? nextActive(g, p) : p;
+    } else {
+      next = nextActive(g, p);
+    }
+    g.turn = next;
+    touch(room, fx);
+    return true;
+  }
+
+  function doPass(room, p){
+    const g = room.g;
+    g.passes++;
+    glog(g, `${g.seats[p].name}：パス`);
+    const f = g.field;
+    const ownerActive = !g.finished.includes(f.owner);
+    const need = ownerActive ? active(g).length - 1 : active(g).length;
+    if (g.passes >= need){
+      g.ghost = { cards:f.cards, owner:f.owner, note:'全員パスで場が流れました' };
+      g.field = null;
+      g.passes = 0;
+      glog(g, '全員パス。場が流れた');
+      g.turn = ownerActive ? f.owner : nextActive(g, f.owner);
+    } else {
+      g.turn = nextActive(g, p);
+    }
+    touch(room);
+  }
+
+  function endGame(room, fx){
+    const g = room.g;
+    active(g).forEach(i => g.finished.push(i));
+    g.phase = 'over';
+    g.prevOrder = g.finished.slice();
+    g.prevOrder.forEach((p,i) => { g.score[p] += POINTS[i]; });
+    glog(g, `対戦終了。${g.seats[g.prevOrder[0]].name}が大富豪`);
+    g.turn = -1;
+    touch(room, fx);
+  }
+
+  /* ----- 自動進行（CPU・離席・時間切れ） ----- */
+  function schedule(room){
+    clearTimeout(room.timer);
+    const g = room.g;
+    g.deadline = null;
+    try {
+      if (g.phase === 'exchange' && g.ex){
+        for (const s of Object.keys(g.ex.need)){
+          if (!g.ex.sub[s] && absent(room, Number(s))) g.ex.sub[s] = low(g.hands[s], g.ex.need[s]).map(c => c.id);
+        }
+        if (exchangeReady(g)){ finishExchange(room); return; }
+        if (room.deadlineSeq !== g.seq){ room.deadlineSeq = g.seq; room.deadlineAt = Date.now() + EX_MS; }
+        g.deadline = room.deadlineAt;
+        const key = g.seq;
+        room.timer = setTimeout(() => safe(() => {
+          if (room.g.seq !== key || room.g.phase !== 'exchange') return;
+          const ex = room.g.ex;
+          for (const s of Object.keys(ex.need)) if (!ex.sub[s]) ex.sub[s] = low(room.g.hands[s], ex.need[s]).map(c => c.id);
+          finishExchange(room);
+        }), Math.max(0, room.deadlineAt - Date.now()));
+        return;
+      }
+      if (g.phase !== 'play') return;
+      const t = g.turn;
+      if (t < 0) return;
+      const key = g.seq;
+      if (isAuto(room, t)){
+        const humansDone = g.seats.every((s,i) => s.cpu || g.finished.includes(i) || absent(room, i));
+        const delay = humansDone ? 300 : CPU_MS + Math.random() * 350;
+        room.timer = setTimeout(() => safe(() => autoMove(room, t, key, false)), delay);
+      } else {
+        if (room.deadlineSeq !== g.seq){ room.deadlineSeq = g.seq; room.deadlineAt = Date.now() + TURN_MS; }
+        g.deadline = room.deadlineAt;
+        room.timer = setTimeout(() => safe(() => autoMove(room, t, key, true)), Math.max(0, room.deadlineAt - Date.now()));
+      }
+    } catch (e) { console.error('schedule', e); }
+  }
+
+  function autoMove(room, p, seq, timedOut){
+    const g = room.g;
+    if (g.seq !== seq || g.phase !== 'play' || g.turn !== p) return;
+    if (timedOut) glog(g, `${g.seats[p].name}は時間切れのため自動で進行します`);
+    const choice = chooseCpu(g, p, timedOut);
+    if (choice) doPlay(room, p, choice); else doPass(room, p);
+  }
+
+  function handCards(room, p, ids){
+    if (!Array.isArray(ids) || ids.length > 4 || !ids.every(Number.isInteger)) throw new ApiError('カードの指定が正しくありません');
+    const cards = room.g.hands[p.seat].filter(c => ids.includes(c.id));
+    if (cards.length !== new Set(ids).size) throw new ApiError('そのカードは持っていません');
+    return cards;
+  }
+
+  function applyAction(room, p, body){
+    const g = room.g;
+    const isHost = !!p.local;
+    switch (body.type){
+      case 'start':
+        if (g.phase !== 'lobby') throw new ApiError('すでに始まっています');
+        if (!isHost) throw new ApiError('ホストだけが開始できます');
+        startRoom(room);
+        return;
+      case 'play': {
+        if (g.phase !== 'play' || g.turn !== p.seat) throw new ApiError('あなたの番ではありません');
+        const cards = handCards(room, p, body.ids);
+        const v = validate(g, cards);
+        if (!v.ok) throw new ApiError(v.reason || '出せないカードです');
+        doPlay(room, p.seat, cards);
+        return;
+      }
+      case 'pass':
+        if (g.phase !== 'play' || g.turn !== p.seat) throw new ApiError('あなたの番ではありません');
+        if (!g.field) throw new ApiError('最初の手番ではパスできません');
+        doPass(room, p.seat);
+        return;
+      case 'exchange': {
+        if (g.phase !== 'exchange' || !g.ex) throw new ApiError('いまはカード交換の時間ではありません');
+        const need = g.ex.need[p.seat];
+        if (!need) throw new ApiError('あなたは渡すカードを選ぶ必要がありません');
+        const cards = handCards(room, p, body.ids);
+        if (cards.length !== need) throw new ApiError(`${need}枚を選んでください`);
+        g.ex.sub[p.seat] = cards.map(c => c.id);
+        if (exchangeReady(g)) finishExchange(room); else touch(room);
+        return;
+      }
+      case 'next':
+        if (g.phase !== 'over') throw new ApiError('対戦中です');
+        if (!isHost) throw new ApiError('ホストだけが次の対戦を始められます');
+        newGame(room);
+        return;
+      case 'reset':
+        if (g.phase !== 'over') throw new ApiError('対戦中です');
+        if (!isHost) throw new ApiError('ホストだけが操作できます');
+        g.score = [0,0,0,0]; g.prevOrder = null; g.gameNo = 0;
+        newGame(room);
+        return;
+      case 'leave':
+        if (g.phase === 'lobby' && !p.local){
+          room.players = room.players.filter(q => q !== p);
+          if (p.conn){ const c = p.conn; p.conn = null; p.online = false; setTimeout(() => { try { c.close(); } catch (e) {} }, 300); }
+          touch(room);
+        }
+        return;
+      default:
+        throw new ApiError('不明な操作です');
+    }
+  }
+
+  /* ======================= 通信（PeerJS） ======================= */
+  let mode = null;                 // 'host' | 'guest'
+  let peer = null, conn = null;    // ゲスト：ホストへの接続
+  let guest = { code:'', token:'', tries:0, timer:null };
+
+  function genCode(){
+    const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let s = '';
+    for (let i = 0; i < 4; i++) s += A[randInt(A.length)];
+    return s;
+  }
+
+  function teardownAll(){
+    if (HR){ clearTimeout(HR.timer); }
+    HR = null;
+    clearTimeout(guest.timer);
+    if (conn){ try { conn.close(); } catch (e) {} conn = null; }
+    if (peer){ try { peer.destroy(); } catch (e) {} peer = null; }
+    mode = null;
+  }
+
+  /* --- ホスト --- */
+  function createRoom(solo){
+    if (!solo && !(window.Peer)){
+      menuMsg('オンライン機能を読み込めませんでした。通信状況を確認して、ページを開き直してください');
+      return;
+    }
+    teardownAll();
+    sstore.del(SESSION_KEY);
+    mode = 'host'; L = newLocal(); V = null;
+    const hp = newPlayer(nameNow() || (solo ? 'あなた' : 'ホスト'), true);
+    HR = { code:'', rid:randToken().slice(0, 10), players:[hp], hostId:hp.id, g:newGameState(), timer:null, deadlineSeq:-1, deadlineAt:0 };
+    if (solo){ startRoom(HR); return; }
+    menuMsg('部屋をつくっています…');
+    openHostPeer(0);
+  }
+
+  function openHostPeer(tries){
+    const room = HR;
+    const code = genCode();
+    let p;
+    try { p = new window.Peer(PEER_PREFIX + code); }
+    catch (e) { menuMsg('オンライン機能を開始できませんでした'); teardownAll(); return; }
+    peer = p;
+    let opened = false;
+    p.on('open', () => {
+      opened = true;
+      // 古い Peer の遅れて届いたイベントで部屋コードが上書きされないようにする
+      if (HR !== room || peer !== p || mode !== 'host') return;
+      room.code = code;
+      menuMsg('');
+      broadcast(room);
+    });
+    p.on('connection', c => { if (HR === room) onGuestConn(room, c); });
+    p.on('disconnected', () => { try { p.reconnect(); } catch (e) {} });
+    p.on('error', e => {
+      if (HR !== room) return;
+      if (!opened && e.type === 'unavailable-id' && tries < 6){
+        try { p.destroy(); } catch (x) {}
+        openHostPeer(tries + 1);
+        return;
+      }
+      if (!opened){
+        menuMsg('接続サービスにつながりません。しばらくしてからもう一度お試しください');
+        teardownAll();
+      } else if (e.type !== 'peer-unavailable') {
+        console.warn('peer error', e.type);
+      }
+    });
+  }
+
+  function onGuestConn(room, c){
+    c.on('data', msg => safe(() => {
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.type === 'join'){ handleJoin(room, c, msg); return; }
+      if (msg.type === 'act'){
+        const p = c.__p;
+        if (!p){ c.send({ type:'error', message:'まだ参加していません' }); return; }
+        try { applyAction(room, p, msg.action || {}); }
+        catch (e) { c.send({ type:'error', message:e instanceof ApiError ? e.message : 'エラーが起きました' }); if (!(e instanceof ApiError)) console.error(e); }
+      }
+    }));
+    c.on('close', () => safe(() => {
+      const p = c.__p;
+      if (!p || p.conn !== c || HR !== room) return;
+      p.conn = null; p.online = false; p.dropAt = Date.now();
+      broadcast(room);
+      const seq = room.g.seq;
+      setTimeout(() => {
+        if (HR !== room || p.online) return;
+        broadcast(room);
+        if (room.g.seq === seq) schedule(room);
+      }, DROP_MS + 100);
+    }));
+  }
+
+  function handleJoin(room, c, msg){
+    const g = room.g;
+    if (msg.rid && msg.rid !== room.rid){ c.send({ type:'error', fatal:true, message:'この部屋はすでに終了しています（ホストが部屋を作り直しました）' }); return; }
+    const existing = msg.token && room.players.find(q => !q.local && q.id === msg.token);
+    if (existing){
+      if (existing.conn && existing.conn !== c){ const old = existing.conn; existing.conn = null; try { old.close(); } catch (e) {} }
+      existing.conn = c; existing.online = true; existing.dropAt = null; c.__p = existing;
+      c.send({ type:'joined', token:existing.id });
+      broadcast(room);
+      return;
+    }
+    if (g.phase !== 'lobby'){ c.send({ type:'error', fatal:true, message:'この部屋の対戦はすでに始まっています' }); return; }
+    if (room.players.length >= 4){ c.send({ type:'error', fatal:true, message:'この部屋は満席です' }); return; }
+    const p = newPlayer(msg.name, false);
+    p.conn = c; p.online = true; p.dropAt = null; c.__p = p;
+    room.players.push(p);
+    c.send({ type:'joined', token:p.id });
+    touch(room);
+  }
+
+  /* --- ゲスト --- */
+  const SESSION_KEY = 'daifugo:session';
+  const SESSION_MAX_MS = 3 * 60 * 60 * 1000;
+
+  function readSession(){
+    try {
+      const s = JSON.parse(sstore.get(SESSION_KEY) || 'null');
+      if (s && s.code && s.token && Date.now() - (s.t || 0) < SESSION_MAX_MS) return s;
+    } catch (e) {}
+    return null;
+  }
+  function writeSession(g){
+    sstore.set(SESSION_KEY, JSON.stringify({ code:g.code, token:g.token, rid:g.rid || '', t:Date.now() }));
+  }
+
+  function joinRoom(raw, auto){
+    const c = String(raw || '').trim().toUpperCase();
+    if (!/^[A-Z0-9]{4}$/.test(c)){ menuMsg('4文字のコードを入力してください'); return; }
+    if (!window.Peer){ menuMsg('オンライン機能を読み込めませんでした。通信状況を確認して、ページを開き直してください'); return; }
+    teardownAll();
+    mode = 'guest'; L = newLocal(); V = null;
+    let tok = '', rid = '';
+    const s = readSession();
+    if (s && s.code === c){ tok = s.token; rid = s.rid || ''; }
+    guest = { code:c, token:tok, rid, tries:0, timer:null, retrying:false, auto:!!auto };
+    menuMsg('接続しています…');
+    connectGuest();
+  }
+
+  function connectGuest(){
+    const my = guest;
+    // 古い接続は「無効」の印をつけてから閉じる（閉じたときに再接続が連鎖しないように）
+    const oldC = conn, oldP = peer;
+    conn = null; peer = null;
+    if (oldC) oldC.__stale = true;
+    if (oldP){ try { oldP.destroy(); } catch (e) {} }
+    let p;
+    try { p = new window.Peer(); }
+    catch (e) { guestFailed('オンライン機能を開始できませんでした'); return; }
+    peer = p;
+    p.on('open', () => {
+      if (guest !== my || peer !== p) return;
+      const c = p.connect(PEER_PREFIX + my.code, { reliable:true, serialization:'json' });
+      conn = c;
+      const live = () => guest === my && conn === c && !c.__stale && mode === 'guest';
+      c.on('open', () => { if (live()) c.send({ type:'join', name:nameNow(), token:my.token, rid:my.rid }); });
+      c.on('data', msg => safe(() => {
+        if (!live() || !msg) return;
+        if (msg.type === 'joined'){
+          my.tries = 0; my.token = msg.token; my.retrying = false;
+          clearTimeout(my.timer);
+          writeSession(my);
+          menuMsg('');
+        } else if (msg.type === 'view'){
+          const v = msg.view;
+          if (!v) return;
+          if (v.code && v.code !== my.code) return;               // 別の部屋の情報は受け取らない
+          if (v.rid){
+            if (!my.rid){ my.rid = v.rid; writeSession(my); }
+            else if (my.rid !== v.rid){ guestFailed('ホストが部屋を作り直したため、この部屋は終了しました', true); return; }
+          }
+          deliver(v);
+        } else if (msg.type === 'error'){
+          if (msg.fatal || !V){ guestFailed(msg.message, true); } else toast(msg.message);
+        } else if (msg.type === 'closed'){
+          guestFailed('ホストが部屋を閉じました', true);
+        }
+      }));
+      c.on('close', () => { if (live()) guestLost(); });
+      c.on('error', () => { if (live()) guestLost(); });
+    });
+    p.on('error', e => {
+      if (guest !== my || peer !== p || mode !== 'guest') return;
+      if (e.type === 'peer-unavailable'){
+        if (V) guestLost();
+        else if (my.auto) guestFailed('前の部屋は終了していました', true);
+        else guestFailed('部屋が見つかりません。コードと、ホストの画面が開いているかを確かめてください', true);
+      } else if (!V) {
+        guestLost();
+      }
+    });
+  }
+
+  function guestLost(){
+    const my = guest;
+    if (!my || my.retrying) return;                 // すでに再接続を待っているなら何もしない
+    if (my.tries >= 15){ guestFailed('ホストにつながりません。ホストが画面を閉じた可能性があります', true); return; }
+    my.tries++;
+    my.retrying = true;
+    $('conn-chip').hidden = false;
+    clearTimeout(my.timer);
+    my.timer = setTimeout(() => {
+      my.retrying = false;
+      if (guest === my && mode === 'guest') connectGuest();
+    }, 2000);
+  }
+
+  function guestFailed(message, clear){
+    if (clear) sstore.del(SESSION_KEY);
+    teardownAll();
+    toMenu();
+    menuMsg(message || '');
+  }
+
+  /* --- 操作の送信 --- */
+  let pending = false, pendingTimer = null;
+  function doAct(type, extra){
+    const body = Object.assign({ type }, extra || {});
+    if (mode === 'host' && HR){
+      try { applyAction(HR, curHost(HR), body); }
+      catch (e) { if (e instanceof ApiError) toast(e.message); else { console.error(e); toast('エラーが起きました'); } }
+    } else if (mode === 'guest' && conn){
+      pending = true; renderControls();
+      clearTimeout(pendingTimer);
+      pendingTimer = setTimeout(() => { pending = false; if (V) renderControls(); }, 3000);
+      try { conn.send({ type:'act', action:body }); } catch (e) { pending = false; toast('送信できませんでした'); }
+    }
+  }
+
+  /* ======================= 画面（クライアント） ======================= */
+  let V = null, recvAt = 0, me = -1, modalKind = '', toastTimer = null;
+  let L = newLocal();
+  let myName = store.get('daifugo:name') || '';
+  function newLocal(){ return { sel:new Set(), inited:false, lastFx:0, lastField:'', resultFor:-1 }; }
+  const nm = p => V.seats[p].name;
+  const myHand = () => (V && V.hand) || [];
+  const selectedCards = () => myHand().filter(c => L.sel.has(c.id));
+  const nameNow = () => (myName || '').trim();
+
+  function deliver(view){
+    V = view; recvAt = Date.now();
+    pending = false;
+    $('conn-chip').hidden = true;
+    onUpdate();
+  }
+
+  function toMenu(){
+    V = null; me = -1; L = newLocal();
+    menuMsg('');
+    closeModal();
+    document.title = '大富豪';
+    showScreen('menu');
+    refreshLast();
+  }
+
+  function leave(){
+    const wasHost = mode === 'host';
+    if (mode === 'host' && HR){
+      HR.players.forEach(p => { if (!p.local && p.conn){ try { p.conn.send({ type:'closed' }); } catch (e) {} } });
+      const pr = peer; peer = null;
+      HR = null; mode = null;
+      setTimeout(() => { try { pr && pr.destroy(); } catch (e) {} }, 400);
+    } else if (mode === 'guest'){
+      try { if (conn) conn.send({ type:'act', action:{ type:'leave' } }); } catch (e) {}
+      const pr = peer, c = conn;
+      sstore.del(SESSION_KEY);
+      clearTimeout(guest.timer);
+      peer = null; conn = null; mode = null;
+      setTimeout(() => { try { c && c.close(); } catch (e) {} try { pr && pr.destroy(); } catch (e) {} }, 300);
+    }
+    toMenu();
+  }
+
+  function showScreen(n){
+    $('menu').hidden = n !== 'menu';
+    $('roomlobby').hidden = n !== 'roomlobby';
+    $('game').hidden = n !== 'game';
+    $('btn-leave').hidden = n === 'menu';
+    const showCode = n !== 'menu' && V && V.code;
+    $('room-chip').hidden = !showCode;
+    if (showCode) $('room-chip').textContent = '部屋 ' + V.code;
+    $('game-no').hidden = n !== 'game';
+    if (n !== 'game') $('rev-chip').hidden = true;
+    document.body.classList.toggle('rev', n === 'game' && !!V && !!V.rev);
+    if (n === 'menu') $('conn-chip').hidden = true;
+  }
+
+  function onUpdate(){
+    if (!V) return;
+    if (V.phase === 'lobby'){
+      me = -1;
+      showScreen('roomlobby');
+      renderLobby();
+      return;
+    }
+    me = V.you;
+    showScreen('game');
+    const first = !L.inited;
+    L.inited = true;
+    const fk = V.field ? V.field.owner + ':' + V.field.cards.map(c => c.id).join(',') : '';
+    const drop = !first && !!V.field && fk !== L.lastField;
+    L.lastField = fk;
+    const mine = new Set(myHand().map(c => c.id));
+    Array.from(L.sel).forEach(id => { if (!mine.has(id)) L.sel.delete(id); });
+    render(drop);
+    if (V.fx && V.fx.seq > L.lastFx){
+      if (!first) flash(V.fx.text);
+      L.lastFx = V.fx.seq;
+    }
+    if (V.phase === 'over' && L.resultFor !== V.gameNo){
+      L.resultFor = V.gameNo;
+      const gn = V.gameNo;
+      setTimeout(() => { if (V && V.phase === 'over' && V.gameNo === gn) showResult(); }, 900);
+    }
+    if (V.phase !== 'over' && modalKind === 'result') closeModal();
+    document.title = (V.phase === 'play' && V.turn === me ? '▶ あなたの番｜' : '') + '大富豪';
+  }
+
+  function cardHTML(c, o = {}){
+    const joker = c.s === 'J';
+    const red = joker || c.s === 'H' || c.s === 'D';
+    const label = joker ? 'JOKER' : LABEL(c.r);
+    const sym = joker ? '★' : SYM[c.s];
+    const cls = `card ${red ? 'red' : ''} ${joker ? 'joker' : ''} ${o.cls || ''}`;
+    const inner = `<span class="idx">${label}${joker ? '' : `<small>${sym}</small>`}</span><span class="pip">${sym}</span>`;
+    if (o.tag === 'button'){
+      const name = joker ? 'ジョーカー' : `${SUIT_NAME[c.s]}の${LABEL(c.r)}`;
+      return `<button type="button" class="${cls}" data-id="${c.id}" aria-pressed="${o.sel ? 'true' : 'false'}" aria-label="${name}">${inner}</button>`;
+    }
+    return `<span class="${cls}">${inner}</span>`;
+  }
+
+  function renderLobby(){
+    $('lb-code').textContent = V.code;
+    const ps = V.players;
+    let html = ps.map(p => {
+      const tags = [p.host ? 'ホスト' : '', p.you ? 'あなた' : '', p.connected ? '' : '切断中'].filter(Boolean).join('・');
+      return `<li><span>${esc(p.name)}</span><em>${tags}</em></li>`;
+    }).join('');
+    for (let i = ps.length; i < 4; i++) html += `<li class="empty"><span>空席（CPU が入ります）</span></li>`;
+    $('lb-list').innerHTML = html;
+    $('lb-start').hidden = !V.isHost;
+    $('lb-wait').hidden = V.isHost;
+    $('lb-hostnote').hidden = !V.isHost;
+  }
+
+  function renderSeats(){
+    const base = me >= 0 ? me : 0;
+    let html = '';
+    for (let k = 1; k <= 3; k++){
+      const i = (base + k) % 4;
+      const s = V.seats[i];
+      const fi = V.finished.indexOf(i);
+      let role = '';
+      if (fi >= 0) role = `${fi + 1}位であがり`;
+      else if (V.prevOrder) role = `前回：${TITLES[V.prevOrder.indexOf(i)]}`;
+      const cls = (V.turn === i && V.phase === 'play' ? 'turn ' : '') + (fi >= 0 ? 'out' : '');
+      const tag = s.cpu ? '<span class="tag">CPU</span>' : (s.away ? '<span class="tag">離席中</span>' : '');
+      html += `<div class="seat ${cls}">
+        <div class="name">${esc(s.name)}${tag}</div>
+        <div class="role">${role}</div>
+        <div class="row"><span class="backs">${'<i></i>'.repeat(Math.min(s.count, 14))}</span><span class="count">${s.count}枚</span></div>
+      </div>`;
+    }
+    $('seats').innerHTML = html;
+  }
+
+  function renderField(drop){
+    const f = V.field, g = V.ghost;
+    let html;
+    if (f){
+      html = `<div class="stage"><div class="cards ${drop ? 'drop' : ''}">${f.cards.map(c => cardHTML(c)).join('')}</div><div class="cap">${esc(nm(f.owner))}が${f.count}枚出しました</div></div>`;
+    } else if (g){
+      html = `<div class="stage ghost"><div class="cards">${g.cards.map(c => cardHTML(c)).join('')}</div><div class="cap">${esc(g.note)}</div></div>`;
+    } else {
+      html = `<div class="stage empty"><div class="cap">場にカードはありません</div></div>`;
+    }
+    html += `<ol class="log">${V.log.map(l => `<li>${esc(l)}</li>`).join('')}</ol>`;
+    $('field').innerHTML = html;
+  }
+
+  function renderHand(){
+    $('hand').innerHTML = myHand().map(c => {
+      const sel = L.sel.has(c.id);
+      return cardHTML(c, { tag:'button', sel, cls:(sel ? 'sel ' : '') + (V.fresh.includes(c.id) ? 'fresh' : '') });
+    }).join('');
+    fitHand();
+  }
+
+  function fitHand(){
+    const el = $('hand');
+    const cards = Array.from(el.children);
+    const n = cards.length;
+    if (!n) return;
+    const cw = cards[0].offsetWidth;
+    const avail = el.clientWidth - 4;
+    const gap = 6;
+    let m = gap;
+    if (n > 1 && n * cw + (n - 1) * gap > avail) m = (avail - cw) / (n - 1) - cw;
+    cards.forEach((c,i) => { c.style.marginLeft = i ? m + 'px' : '0'; });
+  }
+
+  const secsLeft = () => (V && V.msLeft != null ? Math.max(0, Math.ceil((V.msLeft - (Date.now() - recvAt)) / 1000)) : null);
+  const clock = () => { const s = secsLeft(); return s != null && s <= 20 ? `（あと${s}秒で自動進行）` : ''; };
+
+  function localCheck(cards){
+    if (!V.field){
+      const g0 = { field:null, rev:V.rev };
+      return validate(g0, cards);
+    }
+    return validate({ field:V.field, rev:V.rev }, cards);
+  }
+
+  function renderControls(){
+    if (!V || V.phase === 'lobby') return;
+    const sel = selectedCards();
+    const myTurn = V.phase === 'play' && V.turn === me;
+    let hint = '', bad = false, canPlay = false, canPass = false, label = '出す', showPass = true;
+    if (V.phase === 'exchange'){
+      showPass = false;
+      if (V.exNeed && !V.exSent){
+        label = '渡す';
+        canPlay = sel.length === V.exNeed;
+        hint = `渡すカードを${V.exNeed}枚選んでください（選択中 ${sel.length}枚）${clock()}`;
+      } else {
+        label = '待機中';
+        hint = V.exNeed ? '送信しました。ほかの人を待っています' : 'カード交換中です。しばらくお待ちください';
+      }
+    } else if (V.phase === 'over'){
+      showPass = false;
+      label = V.isHost ? '次の対戦へ' : '開始待ち';
+      canPlay = V.isHost;
+      hint = V.isHost ? '対戦が終わりました' : 'ホストが次の対戦を始めるのを待っています';
+    } else if (me >= 0 && V.finished.includes(me)){
+      showPass = false; label = '観戦中';
+      hint = 'あがり！ 残りの順位が決まるまでお待ちください';
+    } else if (myTurn){
+      const v = localCheck(sel);
+      canPlay = v.ok;
+      canPass = !!V.field;
+      if (sel.length && !v.ok){ hint = v.reason; bad = true; }
+      else if (sel.length) hint = '出せます';
+      else hint = V.field ? `場は${V.field.count}枚。強いカードで返すか、パスです` : 'あなたの番です。好きなカードから出せます';
+      hint += clock();
+    } else {
+      hint = `${nm(V.turn)}の番です`;
+    }
+    if (pending){ canPlay = false; canPass = false; }
+    const idx = me >= 0 ? V.finished.indexOf(me) : -1;
+    const role = idx >= 0 ? `${idx + 1}位あがり` : (V.prevOrder && me >= 0 ? `前回：${TITLES[V.prevOrder.indexOf(me)]}` : '');
+    $('who').innerHTML = `${esc(me >= 0 ? nm(me) : '')}<span>${myHand().length}枚${role ? '・' + role : ''}</span>`;
+    const h = $('hint');
+    h.textContent = hint;
+    h.classList.toggle('bad', bad);
+    const bp = $('btn-play'), bs = $('btn-pass');
+    bp.textContent = label; bp.disabled = !canPlay;
+    bs.hidden = !showPass; bs.disabled = !canPass;
+  }
+
+  function render(drop){
+    document.body.classList.toggle('rev', !!V.rev);
+    $('game-no').textContent = `第${V.gameNo}戦`;
+    $('rev-chip').hidden = !V.rev;
+    renderSeats(); renderField(drop); renderHand(); renderControls();
+  }
+
+  function flash(text){
+    const f = $('flash');
+    f.textContent = text;
+    f.classList.remove('go');
+    void f.offsetWidth;
+    f.classList.add('go');
+  }
+
+  function toast(msg){
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+  }
+  function menuMsg(t){ $('menu-msg').textContent = t || ''; }
+
+  function showModal(html, kind){
+    const m = $('modal');
+    modalKind = kind || '';
+    m.innerHTML = `<div class="panel" role="dialog" aria-modal="true">${html}</div>`;
+    m.hidden = false;
+    const b = m.querySelector('button');
+    if (b) b.focus();
+  }
+  function closeModal(){ const m = $('modal'); m.hidden = true; m.innerHTML = ''; modalKind = ''; }
+
+  function showResult(){
+    if (!V || V.phase !== 'over') return;
+    const rows = V.prevOrder.map((p,i) =>
+      `<li class="${p === me ? 'me' : ''}"><span class="t">${TITLES[i]}</span><span>${esc(nm(p))}</span><span class="pt">+${POINTS[i]}（計 ${V.score[p]}）</span></li>`
+    ).join('');
+    const actions = V.isHost
+      ? `<div class="row"><button class="btn primary" id="m-next" type="button">次の対戦へ</button><button class="btn" id="m-reset" type="button">成績をリセット</button></div>`
+      : `<p class="note">ホストが次の対戦を始めるのを待っています。</p><div class="row"><button class="btn" id="m-close" type="button">閉じる</button></div>`;
+    showModal(`<h2>第${V.gameNo}戦の結果</h2><ol class="result">${rows}</ol>
+      <p>次の対戦では、大貧民の強い2枚と大富豪の選んだ2枚、貧民の強い1枚と富豪の選んだ1枚を交換します。</p>${actions}`, 'result');
+  }
+
+  function showRules(){
+    showModal(`<h2>遊び方</h2>
+      <ul>
+        <li>4人で対戦します。人数が足りない席は CPU が入ります。ジョーカー2枚を含む54枚を配ります。</li>
+        <li>強さは 3 が最弱で、4 … K、A、2、ジョーカーの順に強くなります。</li>
+        <li>場と同じ枚数で、場より強いカードを出します。出せない、または出したくないときはパスします。全員がパスすると場が流れ、最後に出した人から再開します。</li>
+        <li>同じ数字なら2〜4枚をまとめて出せます。ジョーカーはどの数字にもなります。</li>
+        <li><b>八切り</b>：8を出すと場が流れ、続けて自分の番です。</li>
+        <li><b>革命</b>：4枚を同時に出すと、強さが逆転します（ジョーカーは最強のまま）。もう一度出すと元に戻ります。</li>
+        <li><b>スペ3返し</b>：1枚のジョーカーには ♠3 を出して返せます。</li>
+        <li>手札を最初になくした人が大富豪です。2戦目からは順位に応じてカードを交換し、大貧民から始まります。</li>
+        <li>操作：カードをタップして選び、「出す」を押します。</li>
+        <li>1手の持ち時間は60秒です。時間切れや、通信が切れたまま戻らないときは、自動で進行します。画面を開き直せば、そのまま席に戻れます。</li>
+        <li>部屋をつくった人（ホスト）の画面がゲームを進めます。ホストが画面を閉じる、またはスマホの画面が消えると、全員のゲームが止まります。</li>
+      </ul>
+      <div class="row"><button class="btn primary" id="m-close" type="button">閉じる</button></div>`, 'rules');
+  }
+
+  /* ======================= 入力 ======================= */
+  $('hand').addEventListener('click', e => {
+    const b = e.target.closest('.card');
+    if (!b || !V || me < 0) return;
+    const id = Number(b.dataset.id);
+    if (L.sel.has(id)) L.sel.delete(id); else L.sel.add(id);
+    renderHand(); renderControls();
+  });
+
+  $('btn-play').addEventListener('click', () => {
+    if (!V) return;
+    if (V.phase === 'over'){ if (V.isHost) doAct('next'); return; }
+    const sel = selectedCards();
+    if (V.phase === 'exchange'){
+      if (!V.exNeed || V.exSent || sel.length !== V.exNeed) return;
+      const ids = sel.map(c => c.id);
+      L.sel.clear();
+      doAct('exchange', { ids });
+      return;
+    }
+    if (V.phase !== 'play' || V.turn !== me || !localCheck(sel).ok) return;
+    const ids = sel.map(c => c.id);
+    L.sel.clear();
+    doAct('play', { ids });
+  });
+
+  $('btn-pass').addEventListener('click', () => {
+    if (!V || V.phase !== 'play' || V.turn !== me || !V.field) return;
+    L.sel.clear();
+    doAct('pass');
+  });
+
+  $('btn-rules').addEventListener('click', showRules);
+  $('btn-leave').addEventListener('click', leave);
+  $('modal').addEventListener('click', e => {
+    const t = e.target.id;
+    if (t === 'modal' || t === 'm-close') closeModal();
+    if (t === 'm-next'){ closeModal(); doAct('next'); }
+    if (t === 'm-reset'){ closeModal(); doAct('reset'); }
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) closeModal(); });
+  window.addEventListener('resize', () => { if (V && V.phase !== 'lobby' && !$('game').hidden) fitHand(); });
+  setInterval(() => { if (V && V.msLeft != null && V.phase !== 'lobby' && !$('game').hidden) renderControls(); }, 1000);
+
+  $('name').value = myName;
+  $('name').addEventListener('input', e => { myName = e.target.value; store.set('daifugo:name', myName); });
+  $('m-create').addEventListener('click', () => createRoom(false));
+  $('m-solo').addEventListener('click', () => createRoom(true));
+  $('m-join').addEventListener('click', () => joinRoom($('code').value));
+  $('code').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom($('code').value); });
+  $('lb-start').addEventListener('click', () => doAct('start'));
+  $('lb-share').addEventListener('click', async () => {
+    const url = location.origin + location.pathname + '?room=' + (V ? V.code : '');
+    try {
+      if (navigator.share && /Mobi|Android|iPhone/i.test(navigator.userAgent)){
+        await navigator.share({ title:'大富豪', text:'大富豪で遊ぼう！', url });
+        return;
+      }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    try { await navigator.clipboard.writeText(url); toast('招待リンクをコピーしました'); }
+    catch (e) { toast(url); }
+  });
+
+  // 前の部屋に戻るのは、ボタンを押したときだけ（ページを開いただけでは入らない）
+  function refreshLast(){
+    const s = readSession();
+    const b = $('m-last');
+    if (s && window.Peer){
+      b.hidden = false;
+      b.textContent = `前の部屋（${s.code}）にもどる`;
+    } else {
+      b.hidden = true;
+    }
+  }
+  $('m-last').addEventListener('click', () => {
+    const s = readSession();
+    if (s) joinRoom(s.code, true);
+    else refreshLast();
+  });
+
+  /* ======================= 起動 ======================= */
+  showScreen('menu');
+  const qRoom = new URLSearchParams(location.search).get('room');
+  refreshLast();
+  if (qRoom){
+    $('code').value = qRoom.toUpperCase().slice(0, 4);
+    $('menu-note').textContent = `部屋 ${qRoom.toUpperCase().slice(0, 4)} に招待されています。ニックネームを入れて「参加」を押してください。`;
+    (myName ? $('m-join') : $('name')).focus();
+  }
+})();
+</script>
+</body>
+</html>
