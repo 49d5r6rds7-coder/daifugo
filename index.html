@@ -1054,6 +1054,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 
   function leave(){
     const wasHost = mode === 'host';
+    if (HR) clearTimeout(HR.timer);
     if (mode === 'host' && HR){
       HR.players.forEach(p => { if (!p.local && p.conn){ try { p.conn.send({ type:'closed' }); } catch (e) {} } });
       const pr = peer; peer = null;
