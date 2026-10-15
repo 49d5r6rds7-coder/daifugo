@@ -100,8 +100,33 @@ button{ font:inherit; color:inherit; }
 .log{ position:relative; z-index:1; list-style:none; margin:0; padding:0; display:flex; flex-direction:column; align-items:center; gap:1px; font-size:12.5px; color:var(--muted); min-height:5em; }
 .log li:nth-last-child(n+3){ opacity:.5; }
 .log li:last-child{ color:var(--ink); }
-.drop .card{ animation:drop .26s cubic-bezier(.2,.8,.3,1); }
-@keyframes drop{ from{ transform:translateY(-28px) scale(1.1); opacity:.15; } to{ transform:none; opacity:1; } }
+
+.drop .card {
+  animation: cardDrop 0.38s cubic-bezier(.18,.82,.25,1);
+  transform-origin: center center;
+}
+
+@keyframes cardDrop {
+  0% {
+    transform: translateY(-36px) scale(1.16) rotate(-5deg);
+    opacity: 0;
+  }
+  65% {
+    transform: translateY(4px) scale(0.98) rotate(1deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1) rotate(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drop .card {
+    animation-duration: 0.01ms;
+  }
+}
+
 
 .card{
   --cw:56px;
