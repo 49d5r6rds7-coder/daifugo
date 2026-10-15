@@ -101,19 +101,26 @@ button{ font:inherit; color:inherit; }
 .log li:nth-last-child(n+3){ opacity:.5; }
 .log li:last-child{ color:var(--ink); }
 
+
 .drop .card {
-  animation: cardDrop 0.38s cubic-bezier(.18,.82,.25,1);
+  animation: cardDrop 0.55s cubic-bezier(.18,.82,.25,1);
   transform-origin: center center;
 }
 
 @keyframes cardDrop {
   0% {
-    transform: translateY(-36px) scale(1.16) rotate(-5deg);
+    transform: translateY(-75px) scale(1.18) rotate(-7deg);
     opacity: 0;
   }
-  65% {
-    transform: translateY(4px) scale(0.98) rotate(1deg);
+  45% {
+    transform: translateY(8px) scale(1.04) rotate(2deg);
     opacity: 1;
+  }
+  65% {
+    transform: translateY(-5px) scale(0.98) rotate(-1deg);
+  }
+  82% {
+    transform: translateY(2px) scale(1.01) rotate(0.5deg);
   }
   100% {
     transform: translateY(0) scale(1) rotate(0);
@@ -126,6 +133,7 @@ button{ font:inherit; color:inherit; }
     animation-duration: 0.01ms;
   }
 }
+
 
 
 .card{
