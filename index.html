@@ -256,6 +256,33 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 }
 #toast.show{ opacity:1; }
 @media (min-width:700px){ .codebig{ font-size:76px; } }
+
+/* ---------- ルール設定 ---------- */
+.rulelist{ list-style:none; margin:0; padding:0; }
+.rulelist li{ border-bottom:1px solid var(--gold-faint); }
+.rule{ display:grid; grid-template-columns:auto 1fr; gap:14px; align-items:start; padding:11px 2px; cursor:pointer; }
+.rule b{ display:block; font-size:15px; }
+.rule small{ display:block; margin-top:2px; font-size:12.5px; line-height:1.6; color:var(--muted); font-family:"Zen Kaku Gothic New",sans-serif; letter-spacing:0; font-weight:400; }
+.rule input{
+  appearance:none; -webkit-appearance:none; flex:none; position:relative; width:44px; height:26px; margin:2px 0 0;
+  border-radius:13px; border:1px solid var(--gold-line); background:rgba(0,0,0,.45); cursor:pointer; transition:background .15s;
+}
+.rule input::after{ content:""; position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:var(--muted); transition:transform .15s, background .15s; }
+.rule input:checked{ background:var(--gold-grad); border-color:transparent; }
+.rule input:checked::after{ transform:translateX(18px); background:#2a1d05; }
+.rule input:disabled{ opacity:.55; cursor:default; }
+.rule input:focus-visible{ outline:3px solid #fff; outline-offset:2px; }
+.presets{ display:flex; gap:8px; flex-wrap:wrap; margin:0 0 6px; }
+.presets .mini{ margin-top:0; padding:5px 12px; font-size:12.5px; }
+.jokerrow{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 2px 4px; }
+.jokerrow > span{ font-family:var(--serif); font-weight:700; letter-spacing:.1em; }
+.seg{ display:flex; gap:6px; }
+.segopt{ position:relative; cursor:pointer; }
+.segopt input{ position:absolute; opacity:0; inset:0; margin:0; cursor:pointer; }
+.segopt span{ display:block; min-width:54px; text-align:center; padding:7px 10px; border:1px solid var(--gold-line); border-radius:2px; font-size:14px; }
+.segopt input:checked + span{ background:var(--gold-grad); color:#2a1d05; border-color:transparent; font-weight:700; }
+.segopt input:focus-visible + span{ outline:3px solid #fff; outline-offset:2px; }
+.segopt input:disabled + span{ opacity:.55; }
 </style>
 </head>
 <body>
@@ -266,6 +293,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       <span class="chip" id="room-chip" hidden></span>
       <span class="chip" id="game-no" hidden></span>
       <span class="chip rev" id="rev-chip" hidden>革命中</span>
+      <span class="chip rev" id="jb-chip" hidden>11バック</span>
       <span class="chip" id="conn-chip" hidden>再接続中…</span>
     </div>
     <button class="ghost-btn" id="btn-rules" type="button">遊び方</button>
@@ -279,6 +307,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       <div class="stack">
         <button class="btn primary" id="m-create" type="button">友だちと遊ぶ（部屋をつくる）</button>
         <button class="btn" id="m-solo" type="button">ひとりで遊ぶ（CPU 3人）</button>
+        <button class="btn" id="menu-rules" type="button">ルール設定</button>
         <div class="sep"><span>部屋に参加</span></div>
         <div class="joinrow">
           <input id="code" maxlength="4" placeholder="コード" autocomplete="off" autocapitalize="characters" aria-label="部屋コード">
@@ -286,10 +315,11 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
         </div>
         <button class="btn" id="m-last" type="button" hidden></button>
       </div>
+      <p class="note" id="menu-rules-sum"></p>
       <p class="msg" id="menu-msg" role="status"></p>
       <p class="note" id="menu-note">部屋をつくると、友だちに送れるリンクができます。リンクを開くだけで参加できます。</p>
       <p class="note">部屋をつくった人（ホスト）の画面がゲームを進めます。ホストが画面を閉じると、その部屋は終わります。</p>
-      <p class="note" id="ver" style="opacity:.55">バージョン 2026-10-13 d</p>
+      <p class="note" id="ver" style="opacity:.55">バージョン 2026-10-15 e</p>
     </div>
   </section>
 
@@ -301,6 +331,8 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
         <button class="btn" id="lb-share" type="button">招待リンクをコピー</button>
       </div>
       <ul class="plist" id="lb-list"></ul>
+      <p class="note" id="lb-rules"></p>
+      <div class="stack" style="margin-top:8px"><button class="btn" id="lb-rules-btn" type="button">ルール設定</button></div>
       <div class="stack">
         <button class="btn primary" id="lb-start" type="button">ゲーム開始</button>
         <p class="note" id="lb-wait" hidden>ホストが開始するのを待っています…</p>
@@ -368,10 +400,11 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   class ApiError extends Error {}
 
   /* ======================= カードとルール ======================= */
-  function makeDeck(){
+  function makeDeck(jokers){
     const d = []; let id = 0;
     for (const s of SUITS) for (let r = 3; r <= 15; r++) d.push({ id:id++, s, r });
-    d.push({ id:id++, s:'J', r:16 }, { id:id++, s:'J', r:16 });
+    const n = jokers == null ? 2 : jokers;
+    for (let i = 0; i < n; i++) d.push({ id:id++, s:'J', r:16 });
     return d;
   }
   function shuffle(a){
@@ -386,7 +419,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   const low = (arr,n) => arr.slice().sort(byBase).slice(0,n);
   const cardText = c => (c.s === 'J' ? 'ジョーカー' : SYM[c.s] + LABEL(c.r));
   const cardsText = cs => cs.map(cardText).join(' ');
-  const strength = (g,r) => (r === 16 ? 16 : g.rev ? 18 - r : r);
+  const strength = (g,r) => (r === 16 ? 16 : ((!!g.rev) !== (!!g.jback)) ? 18 - r : r);
   const active = g => [0,1,2,3].filter(i => !g.finished.includes(i));
   function nextActive(g,p){
     for (let k = 1; k <= 4; k++){
@@ -396,7 +429,40 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     return p;
   }
 
+  /* ----- ローカルルール ----- */
+  const RULE_DEFS = [
+    { key:'eight',      name:'八切り',       desc:'8を出すと場が流れ、続けて自分の番になります。' },
+    { key:'revolution', name:'革命',         desc:'4枚を同時に出すと、カードの強さが逆転します（もう一度出すと元に戻ります）。' },
+    { key:'spade3',     name:'スペ3返し',    desc:'1枚のジョーカーには、♠3を出して返せます。' },
+    { key:'jback',      name:'11バック',     desc:'Jを出すと、場が流れるまで強さが逆転します。' },
+    { key:'lock',       name:'縛り',         desc:'同じマークが続けて出されると、場が流れるまでそのマークしか出せません。' },
+    { key:'skip5',      name:'5スキップ',    desc:'5を出すと、次の人が飛ばされます。' },
+    { key:'miyako',     name:'都落ち',       desc:'前回の大富豪が1位になれないと、すぐに大貧民へ落ちます。' },
+    { key:'foul',       name:'反則上がり',   desc:'ジョーカー、または八切りの8で上がると、最下位になります。' }
+  ];
+  const DEFAULT_RULES = { eight:true, revolution:true, spade3:true, jback:false, lock:false, skip5:false, miyako:false, foul:false, jokers:2 };
+  function sanitizeRules(r){
+    const out = {};
+    for (const k of Object.keys(DEFAULT_RULES)){
+      if (k === 'jokers') out[k] = (r && [0, 1, 2].includes(r[k])) ? r[k] : DEFAULT_RULES[k];
+      else out[k] = (r && typeof r[k] === 'boolean') ? r[k] : DEFAULT_RULES[k];
+    }
+    return out;
+  }
+  const suitsOf = cards => cards.filter(c => c.s !== 'J').map(c => c.s).sort();
+  function lockOk(lock, cards){
+    const pool = suitsOf(cards);
+    const jokers = cards.length - pool.length;
+    let missing = 0;
+    for (const s of lock){
+      const i = pool.indexOf(s);
+      if (i >= 0) pool.splice(i, 1); else missing++;
+    }
+    return missing <= jokers;
+  }
+
   function validate(g, cards){
+    const rules = g.rules || DEFAULT_RULES;
     const n = cards.length;
     if (!n) return { ok:false, reason:'' };
     if (n > 4) return { ok:false, reason:'一度に出せるのは4枚までです' };
@@ -405,12 +471,22 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     const rank = nat.length ? nat[0].r : 16;
     const f = g.field;
     if (!f) return { ok:true, rank };
-    if (f.count === 1 && f.cards[0].s === 'J' && n === 1 && cards[0].s === 'S' && cards[0].r === 3){
+    if (rules.spade3 && f.count === 1 && f.cards[0].s === 'J' && n === 1 && cards[0].s === 'S' && cards[0].r === 3){
       return { ok:true, rank:3, ret:true };
     }
     if (n !== f.count) return { ok:false, reason:`場は${f.count}枚です。${f.count}枚で出してください` };
     if (strength(g, rank) <= strength(g, f.rank)) return { ok:false, reason:'場より強いカードを選んでください' };
+    if (f.lock && !lockOk(f.lock, cards)) return { ok:false, reason:`縛り：${f.lock.map(s => SYM[s]).join('')}を含めて出してください` };
     return { ok:true, rank };
+  }
+
+  function combos(arr, k){
+    const out = [];
+    (function rec(start, cur){
+      if (cur.length === k){ out.push(cur.slice()); return; }
+      for (let i = start; i < arr.length; i++){ cur.push(arr[i]); rec(i + 1, cur); cur.pop(); }
+    })(0, []);
+    return out;
   }
 
   function candidates(hand){
@@ -420,16 +496,15 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     nat.forEach(c => (byRank[c.r] = byRank[c.r] || []).push(c));
     const out = [];
     for (const r in byRank){
-      const arr = byRank[r].slice().sort((a,b) => (a.s === 'S') - (b.s === 'S'));
-      const max = Math.min(4, arr.length + jokers.length);
-      for (let s = 1; s <= max; s++){
-        const useN = Math.min(s, arr.length);
-        out.push([...arr.slice(0, useN), ...jokers.slice(0, s - useN)]);
+      const arr = byRank[r];
+      for (let useN = 1; useN <= Math.min(4, arr.length); useN++){
+        for (const combo of combos(arr, useN)){
+          out.push(combo);
+          for (let j = 1; j <= Math.min(jokers.length, 4 - useN); j++) out.push([...combo, ...jokers.slice(0, j)]);
+        }
       }
     }
     for (let s = 1; s <= jokers.length; s++) out.push(jokers.slice(0, s));
-    const s3 = nat.find(c => c.s === 'S' && c.r === 3);
-    if (s3) out.push([s3]);
     return out;
   }
 
@@ -442,7 +517,8 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     const score = c => {
       const v = validate(g, c);
       const jk = c.filter(x => x.s === 'J').length;
-      return strength(g, v.rank) + jk * 6 - c.length * 0.8;
+      const s3 = c.some(x => x.s === 'S' && x.r === 3) ? 0.3 : 0;
+      return strength(g, v.rank) + jk * 6 - c.length * 0.8 + s3;
     };
     legal.sort((a,b) => score(a) - score(b));
     const best = legal[0];
@@ -459,11 +535,19 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
      ゲームの進行・配札・CPU は、部屋をつくった人（ホスト）のブラウザの中で動きます。 */
   let HR = null;   // ホストが持つ部屋 { code, players, g, timer, ... }
 
+  // 古い部屋を完全に止める（退出・作り直しのあとに、裏で動き続けて画面を乗っ取らないように）
+  function killRoom(room){
+    if (!room) return;
+    room.dead = true;
+    clearTimeout(room.timer);
+  }
+  const isLive = room => !!room && !room.dead && room === HR;
+
   function newGameState(){
     return {
       phase:'lobby', seq:0, gameNo:0, score:[0,0,0,0], prevOrder:null, seats:null,
-      hands:[[],[],[],[]], finished:[], fresh:[], log:[], field:null, ghost:null,
-      rev:false, turn:-1, passes:0, ex:null, fx:null, deadline:null
+      hands:[[],[],[],[]], finished:[], fouled:[], fresh:[], log:[], field:null, ghost:null,
+      rev:false, jback:false, turn:-1, passes:0, ex:null, fx:null, deadline:null, rules:sanitizeRules(null)
     };
   }
   function cleanName(n){
@@ -487,7 +571,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 
   function viewFor(room, p){
     const g = room.g;
-    const v = { code:room.code, rid:room.rid, phase:g.phase, gameNo:g.gameNo, isHost:p.local, seq:g.seq, fx:g.fx, score:g.score, prevOrder:g.prevOrder };
+    const v = { code:room.code, rid:room.rid, phase:g.phase, gameNo:g.gameNo, isHost:p.local, seq:g.seq, fx:g.fx, score:g.score, prevOrder:g.prevOrder, rules:g.rules };
     if (g.phase === 'lobby'){
       v.players = room.players.map(q => ({ name:q.name, host:q.local, you:q.id === p.id, connected:q.online }));
       return v;
@@ -497,7 +581,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     v.hand = p.seat >= 0 ? g.hands[p.seat] : [];
     const mine = new Set(v.hand.map(c => c.id));
     v.fresh = g.fresh.filter(id => mine.has(id));
-    v.field = g.field; v.ghost = g.ghost; v.rev = g.rev; v.turn = g.turn; v.finished = g.finished;
+    v.field = g.field; v.ghost = g.ghost; v.rev = g.rev; v.jback = g.jback; v.fouled = g.fouled; v.turn = g.turn; v.finished = g.finished;
     v.log = g.log.slice(-4);
     v.msLeft = g.deadline ? Math.max(0, g.deadline - Date.now()) : null;
     v.exNeed = g.ex ? (g.ex.need[p.seat] || 0) : 0;
@@ -506,6 +590,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   }
 
   function broadcast(room){
+    if (!isLive(room)) return;
     for (const p of room.players){
       if (!p.online) continue;
       const view = JSON.parse(JSON.stringify(viewFor(room, p)));
@@ -514,7 +599,15 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     }
   }
 
+  function resync(room, p){
+    if (!isLive(room) || !p.online) return;
+    const view = JSON.parse(JSON.stringify(viewFor(room, p)));
+    if (p.local) deliver(view);
+    else if (p.conn){ try { p.conn.send({ type:'view', view }); } catch (e) {} }
+  }
+
   function touch(room, fx){
+    if (!isLive(room)) return;
     const g = room.g;
     g.seq++;
     if (fx) g.fx = { seq:g.seq, text:fx };
@@ -541,18 +634,13 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   }
 
   function newGame(room){
-  console.trace('[DEBUG] newGame called', {
-  phase: room.g.phase,
-  gameNo: room.g.gameNo,
-  time: new Date().toISOString()
-});
     const g = room.g;
-    const deck = shuffle(makeDeck());
+    const deck = shuffle(makeDeck(g.rules.jokers));
     const hands = [[],[],[],[]];
     deck.forEach((c,i) => hands[i % 4].push(c));
     hands.forEach(h => h.sort(byBase));
     Object.assign(g, {
-      hands, field:null, ghost:null, rev:false, passes:0, finished:[], phase:'play',
+      hands, field:null, ghost:null, rev:false, jback:false, passes:0, finished:[], fouled:[], phase:'play',
       fresh:[], log:[], ex:null, gameNo:g.gameNo + 1, turn:-1, fx:null
     });
     if (g.prevOrder){ startExchange(room); return; }
@@ -610,40 +698,85 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 
   function doPlay(room, p, cards){
     const g = room.g;
+    const rules = g.rules;
     const v = validate(g, cards);
     if (!v.ok) return false;
+    const prev = g.field;
     const ids = new Set(cards.map(c => c.id));
     g.hands[p] = g.hands[p].filter(c => !ids.has(c.id));
     const own = new Set(g.hands[p].map(c => c.id));
     g.fresh = g.fresh.filter(id => !ids.has(id) && !own.has(id));
     const shown = cards.slice().sort(byBase);
     const name = g.seats[p].name;
+    const suits = suitsOf(cards);
+
+    // 縛り：同じマークが続いたら、場が流れるまで固定
+    let lock = null;
+    if (prev && !v.ret){
+      if (prev.lock) lock = prev.lock;
+      else if (rules.lock && prev.suits && prev.suits.length === prev.count && prev.count === cards.length
+               && suits.length === cards.length && prev.suits.join('') === suits.join('')){
+        lock = suits;
+        glog(g, `縛り！ ${lock.map(s => SYM[s]).join('')}しか出せません`);
+      }
+    }
+
     g.ghost = null;
-    g.field = { cards:shown, count:cards.length, rank:v.rank, owner:p };
+    g.field = { cards:shown, count:cards.length, rank:v.rank, owner:p, suits, lock };
     g.passes = 0;
     glog(g, `${name}：${cardsText(shown)}${v.ret ? '（スペ3返し）' : ''}`);
 
     let fx = '';
-    if (cards.length >= 4){
+    if (rules.revolution && cards.length >= 4){
       g.rev = !g.rev;
       glog(g, g.rev ? '革命！ カードの強さが逆転' : '革命返し！ 強さが元に戻った');
       fx = '革命';
     }
+    if (rules.jback && v.rank === 11 && !v.ret && !g.jback){
+      g.jback = true;
+      glog(g, '11バック！ 場が流れるまで強さが逆転');
+      if (!fx) fx = '11バック';
+    }
+
+    const hasJoker = cards.some(c => c.s === 'J');
+    const eight = rules.eight && v.rank === 8 && !v.ret;
     let out = false;
     if (g.hands[p].length === 0){
-      g.finished.push(p);
       out = true;
-      glog(g, `${name}があがり（${TITLES[g.finished.length - 1]}）`);
+      g.finished.push(p);
+      if (rules.foul && (hasJoker || eight)){
+        g.fouled.push(p);
+        glog(g, `${name}は反則上がり（最下位）`);
+        if (!fx) fx = '反則';
+      } else {
+        const place = g.finished.filter(i => !g.fouled.includes(i)).length - 1;
+        glog(g, `${name}があがり（${TITLES[place]}）`);
+      }
     }
     if (active(g).length <= 1){ endGame(room, fx); return true; }
 
+    const clearField = note => {
+      g.ghost = { cards:shown, owner:p, note };
+      g.field = null; g.jback = false; g.passes = 0;
+    };
     let next;
-    if (v.rank === 8 && !v.ret){
-      g.ghost = { cards:shown, owner:p, note:`${name}の八切り` };
-      g.field = null;
+    if (eight){
+      clearField(`${name}の八切り`);
       glog(g, '八切り！ 場が流れた');
       if (!fx) fx = '八切り';
       next = out ? nextActive(g, p) : p;
+    } else if (rules.skip5 && v.rank === 5 && !v.ret){
+      const n1 = nextActive(g, p), n2 = nextActive(g, n1);
+      if (n1 === p || n2 === p){
+        clearField(`${name}の5スキップ`);
+        glog(g, '5スキップ！ ほかの全員が飛ばされて、場が流れた');
+        next = out ? nextActive(g, p) : p;
+      } else {
+        g.passes = 1;
+        glog(g, `5スキップ！ ${g.seats[n1].name}は飛ばされた`);
+        next = n2;
+      }
+      if (!fx) fx = '5スキップ';
     } else {
       next = nextActive(g, p);
     }
@@ -662,6 +795,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     if (g.passes >= need){
       g.ghost = { cards:f.cards, owner:f.owner, note:'全員パスで場が流れました' };
       g.field = null;
+      g.jback = false;
       g.passes = 0;
       glog(g, '全員パス。場が流れた');
       g.turn = ownerActive ? f.owner : nextActive(g, f.owner);
@@ -674,8 +808,19 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   function endGame(room, fx){
     const g = room.g;
     active(g).forEach(i => g.finished.push(i));
+    // 反則上がりの人は最下位へ（先に反則した人ほど下）
+    let order = g.finished.filter(i => !g.fouled.includes(i)).concat(g.fouled.slice().reverse());
+    // 都落ち：前回の大富豪が1位になれなかったら大貧民へ
+    if (g.rules.miyako && g.prevOrder){
+      const king = g.prevOrder[0];
+      if (order[0] !== king && order[order.length - 1] !== king){
+        order = order.filter(i => i !== king).concat([king]);
+        glog(g, `都落ち！ ${g.seats[king].name}は大貧民に落ちた`);
+      }
+    }
+    g.finished = order;
     g.phase = 'over';
-    g.prevOrder = g.finished.slice();
+    g.prevOrder = order.slice();
     g.prevOrder.forEach((p,i) => { g.score[p] += POINTS[i]; });
     glog(g, `対戦終了。${g.seats[g.prevOrder[0]].name}が大富豪`);
     g.turn = -1;
@@ -685,6 +830,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   /* ----- 自動進行（CPU・離席・時間切れ） ----- */
   function schedule(room){
     clearTimeout(room.timer);
+    if (!isLive(room)) return;
     const g = room.g;
     g.deadline = null;
     try {
@@ -721,6 +867,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   }
 
   function autoMove(room, p, seq, timedOut){
+    if (!isLive(room)) return;
     const g = room.g;
     if (g.seq !== seq || g.phase !== 'play' || g.turn !== p) return;
     if (timedOut) glog(g, `${g.seats[p].name}は時間切れのため自動で進行します`);
@@ -736,6 +883,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   }
 
   function applyAction(room, p, body){
+    if (!isLive(room)) throw new ApiError('この部屋はすでに終了しています');
     const g = room.g;
     const isHost = !!p.local;
     switch (body.type){
@@ -778,6 +926,12 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
         g.score = [0,0,0,0]; g.prevOrder = null; g.gameNo = 0;
         newGame(room);
         return;
+      case 'rules':
+        if (!isHost) throw new ApiError('ルールを変えられるのはホストだけです');
+        if (g.phase !== 'lobby' && g.phase !== 'over') throw new ApiError('対戦中はルールを変えられません');
+        g.rules = sanitizeRules(body.rules);
+        touch(room);
+        return;
       case 'leave':
         if (g.phase === 'lobby' && !p.local){
           room.players = room.players.filter(q => q !== p);
@@ -803,7 +957,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   }
 
   function teardownAll(){
-    if (HR){ clearTimeout(HR.timer); }
+    killRoom(HR);
     HR = null;
     clearTimeout(guest.timer);
     if (conn){ try { conn.close(); } catch (e) {} conn = null; }
@@ -822,6 +976,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     mode = 'host'; L = newLocal(); V = null;
     const hp = newPlayer(nameNow() || (solo ? 'あなた' : 'ホスト'), true);
     HR = { code:'', rid:randToken().slice(0, 10), players:[hp], hostId:hp.id, g:newGameState(), timer:null, deadlineSeq:-1, deadlineAt:0 };
+    HR.g.rules = loadRules();
     if (solo){ startRoom(HR); return; }
     menuMsg('部屋をつくっています…');
     openHostPeer(0);
@@ -862,13 +1017,17 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 
   function onGuestConn(room, c){
     c.on('data', msg => safe(() => {
-      if (!msg || typeof msg !== 'object') return;
+      if (!msg || typeof msg !== 'object' || !isLive(room)) return;
       if (msg.type === 'join'){ handleJoin(room, c, msg); return; }
       if (msg.type === 'act'){
         const p = c.__p;
         if (!p){ c.send({ type:'error', message:'まだ参加していません' }); return; }
         try { applyAction(room, p, msg.action || {}); }
-        catch (e) { c.send({ type:'error', message:e instanceof ApiError ? e.message : 'エラーが起きました' }); if (!(e instanceof ApiError)) console.error(e); }
+        catch (e) {
+          c.send({ type:'error', message:e instanceof ApiError ? e.message : 'エラーが起きました' });
+          if (!(e instanceof ApiError)) console.error(e);
+          resync(room, p);   // 表示が古いときに備えて、最新の画面を送り直す
+        }
       }
     }));
     c.on('close', () => safe(() => {
@@ -890,7 +1049,11 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     if (msg.rid && msg.rid !== room.rid){ c.send({ type:'error', fatal:true, message:'この部屋はすでに終了しています（ホストが部屋を作り直しました）' }); return; }
     const existing = msg.token && room.players.find(q => !q.local && q.id === msg.token);
     if (existing){
-      if (existing.conn && existing.conn !== c){ const old = existing.conn; existing.conn = null; try { old.close(); } catch (e) {} }
+      if (existing.conn && existing.conn !== c){
+        const old = existing.conn; existing.conn = null;
+        try { old.send({ type:'taken' }); } catch (e) {}
+        setTimeout(() => { try { old.close(); } catch (e) {} }, 300);
+      }
       existing.conn = c; existing.online = true; existing.dropAt = null; c.__p = existing;
       c.send({ type:'joined', token:existing.id });
       broadcast(room);
@@ -920,9 +1083,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     sstore.set(SESSION_KEY, JSON.stringify({ code:g.code, token:g.token, rid:g.rid || '', t:Date.now() }));
   }
 
-  function joinRoom(raw, auto, userInitiated = false){
-    // 安全策：参加処理はクリックまたはEnterキーからのみ許可する。ページ起動・タイマー等からの呼び出しでは参加しない。
-    if (!userInitiated){ console.warn('joinRoom blocked: no explicit user action'); return; }
+  function joinRoom(raw, auto){
     const c = String(raw || '').trim().toUpperCase();
     if (!/^[A-Z0-9]{4}$/.test(c)){ menuMsg('4文字のコードを入力してください'); return; }
     if (!window.Peer){ menuMsg('オンライン機能を読み込めませんでした。通信状況を確認して、ページを開き直してください'); return; }
@@ -971,6 +1132,8 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
           deliver(v);
         } else if (msg.type === 'error'){
           if (msg.fatal || !V){ guestFailed(msg.message, true); } else toast(msg.message);
+        } else if (msg.type === 'taken'){
+          guestFailed('別の画面で同じ部屋に入ったため、この画面は切断されました', true);
         } else if (msg.type === 'closed'){
           guestFailed('ホストが部屋を閉じました', true);
         }
@@ -1017,7 +1180,10 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     const body = Object.assign({ type }, extra || {});
     if (mode === 'host' && HR){
       try { applyAction(HR, curHost(HR), body); }
-      catch (e) { if (e instanceof ApiError) toast(e.message); else { console.error(e); toast('エラーが起きました'); } }
+      catch (e) {
+        if (e instanceof ApiError) toast(e.message); else { console.error(e); toast('エラーが起きました'); }
+        resync(HR, curHost(HR));
+      }
     } else if (mode === 'guest' && conn){
       pending = true; renderControls();
       clearTimeout(pendingTimer);
@@ -1054,10 +1220,10 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 
   function leave(){
     const wasHost = mode === 'host';
-    if (HR) clearTimeout(HR.timer);
     if (mode === 'host' && HR){
       HR.players.forEach(p => { if (!p.local && p.conn){ try { p.conn.send({ type:'closed' }); } catch (e) {} } });
       const pr = peer; peer = null;
+      killRoom(HR);
       HR = null; mode = null;
       setTimeout(() => { try { pr && pr.destroy(); } catch (e) {} }, 400);
     } else if (mode === 'guest'){
@@ -1080,7 +1246,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     $('room-chip').hidden = !showCode;
     if (showCode) $('room-chip').textContent = '部屋 ' + V.code;
     $('game-no').hidden = n !== 'game';
-    if (n !== 'game') $('rev-chip').hidden = true;
+    if (n !== 'game'){ $('rev-chip').hidden = true; $('jb-chip').hidden = true; }
     document.body.classList.toggle('rev', n === 'game' && !!V && !!V.rev);
     if (n === 'menu') $('conn-chip').hidden = true;
   }
@@ -1142,6 +1308,8 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     $('lb-start').hidden = !V.isHost;
     $('lb-wait').hidden = V.isHost;
     $('lb-hostnote').hidden = !V.isHost;
+    $('lb-rules').textContent = 'ルール：' + rulesSummary(V.rules);
+    $('lb-rules-btn').textContent = V.isHost ? 'ルール設定' : 'ルールを見る';
   }
 
   function renderSeats(){
@@ -1152,7 +1320,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       const s = V.seats[i];
       const fi = V.finished.indexOf(i);
       let role = '';
-      if (fi >= 0) role = `${fi + 1}位であがり`;
+      if (fi >= 0) role = (V.fouled || []).includes(i) ? '反則上がり' : `${fi + 1}位であがり`;
       else if (V.prevOrder) role = `前回：${TITLES[V.prevOrder.indexOf(i)]}`;
       const cls = (V.turn === i && V.phase === 'play' ? 'turn ' : '') + (fi >= 0 ? 'out' : '');
       const tag = s.cpu ? '<span class="tag">CPU</span>' : (s.away ? '<span class="tag">離席中</span>' : '');
@@ -1169,7 +1337,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     const f = V.field, g = V.ghost;
     let html;
     if (f){
-      html = `<div class="stage"><div class="cards ${drop ? 'drop' : ''}">${f.cards.map(c => cardHTML(c)).join('')}</div><div class="cap">${esc(nm(f.owner))}が${f.count}枚出しました</div></div>`;
+      html = `<div class="stage"><div class="cards ${drop ? 'drop' : ''}">${f.cards.map(c => cardHTML(c)).join('')}</div><div class="cap">${esc(nm(f.owner))}が${f.count}枚出しました${f.lock ? '　縛り：' + f.lock.map(s => SYM[s]).join('') : ''}</div></div>`;
     } else if (g){
       html = `<div class="stage ghost"><div class="cards">${g.cards.map(c => cardHTML(c)).join('')}</div><div class="cap">${esc(g.note)}</div></div>`;
     } else {
@@ -1204,11 +1372,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   const clock = () => { const s = secsLeft(); return s != null && s <= 20 ? `（あと${s}秒で自動進行）` : ''; };
 
   function localCheck(cards){
-    if (!V.field){
-      const g0 = { field:null, rev:V.rev };
-      return validate(g0, cards);
-    }
-    return validate({ field:V.field, rev:V.rev }, cards);
+    return validate({ field:V.field, rev:V.rev, jback:V.jback, rules:V.rules }, cards);
   }
 
   function renderControls(){
@@ -1247,7 +1411,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     }
     if (pending){ canPlay = false; canPass = false; }
     const idx = me >= 0 ? V.finished.indexOf(me) : -1;
-    const role = idx >= 0 ? `${idx + 1}位あがり` : (V.prevOrder && me >= 0 ? `前回：${TITLES[V.prevOrder.indexOf(me)]}` : '');
+    const role = idx >= 0 ? ((V.fouled || []).includes(me) ? '反則上がり' : `${idx + 1}位あがり`) : (V.prevOrder && me >= 0 ? `前回：${TITLES[V.prevOrder.indexOf(me)]}` : '');
     $('who').innerHTML = `${esc(me >= 0 ? nm(me) : '')}<span>${myHand().length}枚${role ? '・' + role : ''}</span>`;
     const h = $('hint');
     h.textContent = hint;
@@ -1261,6 +1425,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     document.body.classList.toggle('rev', !!V.rev);
     $('game-no').textContent = `第${V.gameNo}戦`;
     $('rev-chip').hidden = !V.rev;
+    $('jb-chip').hidden = !V.jback;
     renderSeats(); renderField(drop); renderHand(); renderControls();
   }
 
@@ -1297,28 +1462,96 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       `<li class="${p === me ? 'me' : ''}"><span class="t">${TITLES[i]}</span><span>${esc(nm(p))}</span><span class="pt">+${POINTS[i]}（計 ${V.score[p]}）</span></li>`
     ).join('');
     const actions = V.isHost
-      ? `<div class="row"><button class="btn primary" id="m-next" type="button">次の対戦へ</button><button class="btn" id="m-reset" type="button">成績をリセット</button></div>`
+      ? `<div class="row"><button class="btn primary" id="m-next" type="button">次の対戦へ</button><button class="btn" id="m-reset" type="button">成績をリセット</button><button class="btn" id="m-rules" type="button">ルール設定</button></div>`
       : `<p class="note">ホストが次の対戦を始めるのを待っています。</p><div class="row"><button class="btn" id="m-close" type="button">閉じる</button></div>`;
     showModal(`<h2>第${V.gameNo}戦の結果</h2><ol class="result">${rows}</ol>
       <p>次の対戦では、大貧民の強い2枚と大富豪の選んだ2枚、貧民の強い1枚と富豪の選んだ1枚を交換します。</p>${actions}`, 'result');
   }
 
   function showRules(){
+    const r = V ? V.rules : loadRules();
+    const active = RULE_DEFS.filter(d => r[d.key]).map(d => `<li><b>${d.name}</b>：${d.desc}</li>`).join('');
+    const jk = r.jokers === 0 ? 'ジョーカーは使いません。' : `ジョーカー${r.jokers}枚を加えて配ります。ジョーカーはどの数字にもなり、いちばん強いカードです。`;
     showModal(`<h2>遊び方</h2>
       <ul>
-        <li>4人で対戦します。人数が足りない席は CPU が入ります。ジョーカー2枚を含む54枚を配ります。</li>
-        <li>強さは 3 が最弱で、4 … K、A、2、ジョーカーの順に強くなります。</li>
+        <li>4人で対戦します。人数が足りない席は CPU が入ります。${jk}</li>
+        <li>強さは 3 が最弱で、4 … K、A、2 の順に強くなります。</li>
         <li>場と同じ枚数で、場より強いカードを出します。出せない、または出したくないときはパスします。全員がパスすると場が流れ、最後に出した人から再開します。</li>
-        <li>同じ数字なら2〜4枚をまとめて出せます。ジョーカーはどの数字にもなります。</li>
-        <li><b>八切り</b>：8を出すと場が流れ、続けて自分の番です。</li>
-        <li><b>革命</b>：4枚を同時に出すと、強さが逆転します（ジョーカーは最強のまま）。もう一度出すと元に戻ります。</li>
-        <li><b>スペ3返し</b>：1枚のジョーカーには ♠3 を出して返せます。</li>
+        <li>同じ数字なら2〜4枚をまとめて出せます。</li>
         <li>手札を最初になくした人が大富豪です。2戦目からは順位に応じてカードを交換し、大貧民から始まります。</li>
         <li>操作：カードをタップして選び、「出す」を押します。</li>
         <li>1手の持ち時間は60秒です。時間切れや、通信が切れたまま戻らないときは、自動で進行します。画面を開き直せば、そのまま席に戻れます。</li>
         <li>部屋をつくった人（ホスト）の画面がゲームを進めます。ホストが画面を閉じる、またはスマホの画面が消えると、全員のゲームが止まります。</li>
       </ul>
-      <div class="row"><button class="btn primary" id="m-close" type="button">閉じる</button></div>`, 'rules');
+      <h2 style="font-size:18px;margin:18px 0 8px">いまのルール</h2>
+      <ul>${active || '<li>特別ルールはありません（基本ルールだけです）。</li>'}</ul>
+      <div class="row"><button class="btn primary" id="m-close" type="button">閉じる</button><button class="btn" id="m-rules" type="button">ルール設定</button></div>`, 'rules');
+  }
+
+  /* ======================= ルール設定 ======================= */
+  const PRESETS = {
+    standard:{ eight:true, revolution:true, spade3:true, jback:false, lock:false, skip5:false, miyako:false, foul:false, jokers:2 },
+    all:{ eight:true, revolution:true, spade3:true, jback:true, lock:true, skip5:true, miyako:true, foul:true, jokers:2 },
+    none:{ eight:false, revolution:false, spade3:false, jback:false, lock:false, skip5:false, miyako:false, foul:false, jokers:2 }
+  };
+  function loadRules(){
+    try { return sanitizeRules(JSON.parse(store.get('daifugo:rules') || 'null')); }
+    catch (e) { return sanitizeRules(null); }
+  }
+  function saveRules(r){ store.set('daifugo:rules', JSON.stringify(r)); }
+  function rulesSummary(r){
+    const on = RULE_DEFS.filter(d => r[d.key]).map(d => d.name);
+    const jk = r.jokers === 0 ? 'ジョーカーなし' : `ジョーカー${r.jokers}枚`;
+    return (on.length ? on.join('・') : '特別ルールなし') + '／' + jk;
+  }
+  function updateMenuRules(){ $('menu-rules-sum').textContent = 'ルール：' + rulesSummary(loadRules()); }
+
+  let ruleCtx = null;     // { mode:'defaults' | 'room', readonly }
+  function openRuleEditor(){
+    let rules, readonly = false, mode = 'defaults';
+    if (V){
+      mode = 'room'; rules = V.rules;
+      readonly = !(V.isHost && (V.phase === 'lobby' || V.phase === 'over'));
+    } else {
+      rules = loadRules();
+    }
+    ruleCtx = { mode, readonly };
+    const dis = readonly ? 'disabled' : '';
+    const rows = RULE_DEFS.map(d =>
+      `<li><label class="rule"><input type="checkbox" data-rule="${d.key}" ${rules[d.key] ? 'checked' : ''} ${dis}><span><b>${d.name}</b><small>${d.desc}</small></span></label></li>`
+    ).join('');
+    const seg = [2, 1, 0].map(n =>
+      `<label class="segopt"><input type="radio" name="jokers" value="${n}" ${rules.jokers === n ? 'checked' : ''} ${dis}><span>${n === 0 ? 'なし' : n + '枚'}</span></label>`
+    ).join('');
+    const presets = readonly ? '' :
+      `<div class="presets"><button type="button" class="mini" data-preset="standard">標準</button><button type="button" class="mini" data-preset="all">すべてオン</button><button type="button" class="mini" data-preset="none">すべてオフ</button></div>`;
+    let note = '';
+    if (readonly) note = '<p class="note">ルールを変えられるのは、ホストが待機中・対戦終了後のときだけです。</p>';
+    else if (mode === 'room') note = '<p class="note">変更はすぐ全員に反映され、次の対戦から使われます。</p>';
+    else note = '<p class="note">部屋をつくるときや、ひとりで遊ぶときに使うルールです。</p>';
+    showModal(`<h2>ルール設定</h2>${presets}<ul class="rulelist">${rows}</ul>
+      <div class="jokerrow"><span>ジョーカー</span><div class="seg">${seg}</div></div>${note}
+      <div class="row"><button class="btn primary" id="m-close" type="button">閉じる</button></div>`, 'ruleedit');
+  }
+  function readEditor(){
+    const m = $('modal');
+    const r = {};
+    m.querySelectorAll('[data-rule]').forEach(el => { r[el.dataset.rule] = !!el.checked; });
+    const j = m.querySelector('input[name="jokers"]:checked');
+    r.jokers = j ? Number(j.value) : 2;
+    return sanitizeRules(r);
+  }
+  function setEditor(r){
+    const m = $('modal');
+    m.querySelectorAll('[data-rule]').forEach(el => { el.checked = !!r[el.dataset.rule]; });
+    m.querySelectorAll('input[name="jokers"]').forEach(el => { el.checked = Number(el.value) === r.jokers; });
+  }
+  function applyEditor(){
+    if (!ruleCtx || ruleCtx.readonly) return;
+    const r = readEditor();
+    saveRules(r);
+    if (ruleCtx.mode === 'room') doAct('rules', { rules:r });
+    else updateMenuRules();
   }
 
   /* ======================= 入力 ======================= */
@@ -1360,7 +1593,11 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     if (t === 'modal' || t === 'm-close') closeModal();
     if (t === 'm-next'){ closeModal(); doAct('next'); }
     if (t === 'm-reset'){ closeModal(); doAct('reset'); }
+    if (t === 'm-rules') openRuleEditor();
+    const pr = e.target.closest('[data-preset]');
+    if (pr && modalKind === 'ruleedit'){ setEditor(PRESETS[pr.dataset.preset]); applyEditor(); }
   });
+  $('modal').addEventListener('change', () => { if (modalKind === 'ruleedit') applyEditor(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) closeModal(); });
   window.addEventListener('resize', () => { if (V && V.phase !== 'lobby' && !$('game').hidden) fitHand(); });
   setInterval(() => { if (V && V.msLeft != null && V.phase !== 'lobby' && !$('game').hidden) renderControls(); }, 1000);
@@ -1369,9 +1606,11 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   $('name').addEventListener('input', e => { myName = e.target.value; store.set('daifugo:name', myName); });
   $('m-create').addEventListener('click', () => createRoom(false));
   $('m-solo').addEventListener('click', () => createRoom(true));
-  $('m-join').addEventListener('click', () => joinRoom($('code').value, false, true));
-  $('code').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom($('code').value, false, true); });
+  $('m-join').addEventListener('click', () => joinRoom($('code').value));
+  $('code').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom($('code').value); });
   $('lb-start').addEventListener('click', () => doAct('start'));
+  $('lb-rules-btn').addEventListener('click', openRuleEditor);
+  $('menu-rules').addEventListener('click', openRuleEditor);
   $('lb-share').addEventListener('click', async () => {
     const url = location.origin + location.pathname + '?room=' + (V ? V.code : '');
     try {
@@ -1397,12 +1636,13 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   }
   $('m-last').addEventListener('click', () => {
     const s = readSession();
-    if (s) joinRoom(s.code, true, true);
+    if (s) joinRoom(s.code, true);
     else refreshLast();
   });
 
   /* ======================= 起動 ======================= */
   showScreen('menu');
+  updateMenuRules();
   const qRoom = new URLSearchParams(location.search).get('room');
   refreshLast();
   if (qRoom){
