@@ -476,10 +476,10 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   content: "";
   position: absolute;
   z-index: -1;
-  left: -180px;
+  left: -300px;
   top: 35%;
-  width: 200px;
-  height: 12px;
+  width: 320px;
+  height: 18px;
   border-radius: 50%;
   opacity: 0;
   pointer-events: none;
@@ -492,7 +492,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     #ff2020,
     #ff7777
   );
-  box-shadow: 0 0 22px #ff2020;
+  box-shadow: 0 0 35px #ff2020;
 }
 
 .ambulance-vehicle::after {
@@ -503,12 +503,12 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     #287dff,
     #8bc5ff
   );
-  box-shadow: 0 0 22px #287dff;
+  box-shadow: 0 0 35px #287dff;
 }
 
 .ambulance-scene.run .ambulance-vehicle::before,
 .ambulance-scene.run .ambulance-vehicle::after {
-  animation: ambulanceTrail .65s ease-out infinite;
+ animation: ambulanceTrail .4s ease-out infinite;
 }
 
 @keyframes ambulanceTrail {
