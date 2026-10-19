@@ -1957,7 +1957,11 @@ function playAmbulance() {
   const scene = document.getElementById('ambulance-scene');
   const siren = new Audio('siren.mp3');
 siren.volume = 0.5;
-siren.play().catch(() => {});
+siren.play().then(() => {
+  console.log('サイレン再生成功');
+}).catch((error) => {
+  console.error('サイレン再生失敗:', error);
+});
   if (!scene) return;
 
   clearTimeout(ambulanceTimer);
