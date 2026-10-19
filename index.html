@@ -470,6 +470,62 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   100% { opacity: .08; background: #176bff; }
 }
 
+/* 救急車の後ろに流れる光跡 */
+.ambulance-vehicle::before,
+.ambulance-vehicle::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: -180px;
+  top: 35%;
+  width: 200px;
+  height: 12px;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ambulance-vehicle::before {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #ff2020,
+    #ff7777
+  );
+  box-shadow: 0 0 22px #ff2020;
+}
+
+.ambulance-vehicle::after {
+  top: 55%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #287dff,
+    #8bc5ff
+  );
+  box-shadow: 0 0 22px #287dff;
+}
+
+.ambulance-scene.run .ambulance-vehicle::before,
+.ambulance-scene.run .ambulance-vehicle::after {
+  animation: ambulanceTrail .65s ease-out infinite;
+}
+
+@keyframes ambulanceTrail {
+  0% {
+    opacity: 0;
+    transform: translateX(70px) scaleX(.3);
+  }
+  35% {
+    opacity: .95;
+    transform: translateX(0) scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-80px) scaleX(.6);
+  }
+}
+
 </style>
 </head>
 <body>
