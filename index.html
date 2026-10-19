@@ -1955,6 +1955,9 @@ let ambulanceTimer = null;
 
 function playAmbulance() {
   const scene = document.getElementById('ambulance-scene');
+  const siren = new Audio('siren.mp3');
+siren.volume = 0.5;
+siren.play().catch(() => {});
   if (!scene) return;
 
   clearTimeout(ambulanceTimer);
