@@ -100,41 +100,8 @@ button{ font:inherit; color:inherit; }
 .log{ position:relative; z-index:1; list-style:none; margin:0; padding:0; display:flex; flex-direction:column; align-items:center; gap:1px; font-size:12.5px; color:var(--muted); min-height:5em; }
 .log li:nth-last-child(n+3){ opacity:.5; }
 .log li:last-child{ color:var(--ink); }
-
-
-.drop .card {
-  animation: cardDrop 0.55s cubic-bezier(.18,.82,.25,1);
-  transform-origin: center center;
-}
-
-@keyframes cardDrop {
-  0% {
-    transform: translateY(-75px) scale(1.18) rotate(-7deg);
-    opacity: 0;
-  }
-  45% {
-    transform: translateY(8px) scale(1.04) rotate(2deg);
-    opacity: 1;
-  }
-  65% {
-    transform: translateY(-5px) scale(0.98) rotate(-1deg);
-  }
-  82% {
-    transform: translateY(2px) scale(1.01) rotate(0.5deg);
-  }
-  100% {
-    transform: translateY(0) scale(1) rotate(0);
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .drop .card {
-    animation-duration: 0.01ms;
-  }
-}
-
-
+.drop .card{ animation:drop .26s cubic-bezier(.2,.8,.3,1); }
+@keyframes drop{ from{ transform:translateY(-28px) scale(1.1); opacity:.15; } to{ transform:none; opacity:1; } }
 
 .card{
   --cw:56px;
@@ -316,6 +283,9 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 .segopt input:checked + span{ background:var(--gold-grad); color:#2a1d05; border-color:transparent; font-weight:700; }
 .segopt input:focus-visible + span{ outline:3px solid #fff; outline-offset:2px; }
 .segopt input:disabled + span{ opacity:.55; }
+
+.bombgrid{ display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:12px; }
+.bombgrid .btn{ min-width:0; padding:0; min-height:46px; font-family:var(--didone); font-size:20px; letter-spacing:0; }
 </style>
 </head>
 <body>
@@ -327,6 +297,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       <span class="chip" id="game-no" hidden></span>
       <span class="chip rev" id="rev-chip" hidden>革命中</span>
       <span class="chip rev" id="jb-chip" hidden>11バック</span>
+      <span class="chip rev" id="rv-chip" hidden>逆回り</span>
       <span class="chip" id="conn-chip" hidden>再接続中…</span>
     </div>
     <button class="ghost-btn" id="btn-rules" type="button">遊び方</button>
@@ -352,7 +323,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       <p class="msg" id="menu-msg" role="status"></p>
       <p class="note" id="menu-note">部屋をつくると、友だちに送れるリンクができます。リンクを開くだけで参加できます。</p>
       <p class="note">部屋をつくった人（ホスト）の画面がゲームを進めます。ホストが画面を閉じると、その部屋は終わります。</p>
-      <p class="note" id="ver" style="opacity:.55">バージョン 2026-10-15 e</p>
+      <p class="note" id="ver" style="opacity:.55">バージョン 2026-10-19 g</p>
     </div>
   </section>
 
@@ -455,8 +426,9 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   const strength = (g,r) => (r === 16 ? 16 : ((!!g.rev) !== (!!g.jback)) ? 18 - r : r);
   const active = g => [0,1,2,3].filter(i => !g.finished.includes(i));
   function nextActive(g,p){
+    const step = g.dir === -1 ? 3 : 1;          // 逆回りのときは 1 つ前の席へ
     for (let k = 1; k <= 4; k++){
-      const i = (p + k) % 4;
+      const i = (p + step * k) % 4;
       if (!g.finished.includes(i)) return i;
     }
     return p;
@@ -466,14 +438,25 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   const RULE_DEFS = [
     { key:'eight',      name:'八切り',       desc:'8を出すと場が流れ、続けて自分の番になります。' },
     { key:'revolution', name:'革命',         desc:'4枚を同時に出すと、カードの強さが逆転します（もう一度出すと元に戻ります）。' },
+    { key:'sandstorm',  name:'砂嵐',         desc:'3を3枚以上同時に出すと、革命が起きます。' },
     { key:'spade3',     name:'スペ3返し',    desc:'1枚のジョーカーには、♠3を出して返せます。' },
-    { key:'jback',      name:'11バック',     desc:'Jを出すと、場が流れるまで強さが逆転します。' },
+    { key:'stairs',     name:'階段',         desc:'同じマークで連続した数字を3枚以上まとめて出せます（…K→A→2の順。ジョーカーで穴埋めもできます）。階段には、同じ枚数のより強い階段で返します。' },
+    { key:'stairrev',   name:'階段革命',     desc:'5枚以上の階段を出すと、革命が起きます（階段のルールがオンのときに使えます）。' },
     { key:'lock',       name:'縛り',         desc:'同じマークが続けて出されると、場が流れるまでそのマークしか出せません。' },
+    { key:'jback',      name:'11バック',     desc:'Jを出すと、場が流れるまで強さが逆転します。' },
     { key:'skip5',      name:'5スキップ',    desc:'5を出すと、次の人が飛ばされます。' },
+    { key:'give7',      name:'7渡し',        desc:'7を出したら、手札から出した枚数ぶんのカードを、次の人に渡します。' },
+    { key:'reverse9',   name:'9リバース',    desc:'9を出すと、順番の回る向きが逆になります。' },
+    { key:'ambulance',  name:'救急車',       desc:'9を2枚以上同時に出すと、場が流れ、続けて自分の番になります。' },
+    { key:'discard10',  name:'10捨て',       desc:'10を出したら、手札から出した枚数ぶんのカードを捨てます。' },
+    { key:'qbomber',    name:'Qボンバー',    desc:'Qを出したら、数字を1つ宣言します。全員がその数字のカードを捨てます（捨てて手札がなくなった人は上がり）。' },
     { key:'miyako',     name:'都落ち',       desc:'前回の大富豪が1位になれないと、すぐに大貧民へ落ちます。' },
     { key:'foul',       name:'反則上がり',   desc:'ジョーカー、または八切りの8で上がると、最下位になります。' }
   ];
-  const DEFAULT_RULES = { eight:true, revolution:true, spade3:true, jback:false, lock:false, skip5:false, miyako:false, foul:false, jokers:2 };
+  const DEFAULT_RULES = {
+    eight:true, revolution:true, sandstorm:false, spade3:true, stairs:false, stairrev:false, lock:false, jback:false,
+    skip5:false, give7:false, reverse9:false, ambulance:false, discard10:false, qbomber:false, miyako:false, foul:false, jokers:2
+  };
   function sanitizeRules(r){
     const out = {};
     for (const k of Object.keys(DEFAULT_RULES)){
@@ -494,23 +477,62 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     return missing <= jokers;
   }
 
+  // 出そうとしているカードが「同じ数字のまとめ出し」か「階段」かを判定する
+  function classify(g, cards){
+    const rules = g.rules || DEFAULT_RULES;
+    const n = cards.length;
+    const nat = cards.filter(c => c.s !== 'J');
+    if (nat.every(c => c.r === nat[0].r)){
+      if (n > 4) return { error:'同じ数字は4枚までです' };
+      return { kind:'group', rank:nat.length ? nat[0].r : 16 };
+    }
+    if (!rules.stairs) return { error:'同じ数字のカードだけまとめて出せます' };
+    if (n < 3) return { error:'階段は3枚以上で出します（同じ数字なら、まとめて出せます）' };
+    if (!nat.every(c => c.s === nat[0].s)) return { error:'階段は、同じマークで出してください' };
+    if (new Set(nat.map(c => c.r)).size !== nat.length) return { error:'階段に、同じ数字は入れられません' };
+    const lows = [];
+    for (let L = 3; L + n - 1 <= 15; L++){
+      if (nat.every(c => c.r >= L && c.r <= L + n - 1)) lows.push(L);
+    }
+    if (!lows.length) return { error:'階段になっていません。連続した数字にしてください' };
+    return { kind:'stair', lows };
+  }
+  function arrangeStair(cards, low){
+    const nat = cards.filter(c => c.s !== 'J');
+    const jk = cards.filter(c => c.s === 'J');
+    const out = [];
+    for (let r = low; r < low + cards.length; r++) out.push(nat.find(c => c.r === r) || jk.shift());
+    return out;
+  }
+
   function validate(g, cards){
     const rules = g.rules || DEFAULT_RULES;
     const n = cards.length;
     if (!n) return { ok:false, reason:'' };
-    if (n > 4) return { ok:false, reason:'一度に出せるのは4枚までです' };
-    const nat = cards.filter(c => c.s !== 'J');
-    if (nat.some(c => c.r !== nat[0].r)) return { ok:false, reason:'同じ数字のカードだけまとめて出せます' };
-    const rank = nat.length ? nat[0].r : 16;
+    const cls = classify(g, cards);
+    if (cls.error) return { ok:false, reason:cls.error };
     const f = g.field;
-    if (!f) return { ok:true, rank };
-    if (rules.spade3 && f.count === 1 && f.cards[0].s === 'J' && n === 1 && cards[0].s === 'S' && cards[0].r === 3){
-      return { ok:true, rank:3, ret:true };
+    const strongest = lows => lows.slice().sort((a,b) => strength(g, b) - strength(g, a))[0];
+    if (!f){
+      return cls.kind === 'stair' ? { ok:true, kind:'stair', rank:strongest(cls.lows) } : { ok:true, kind:'group', rank:cls.rank };
+    }
+    const fk = f.kind || 'group';
+    if (fk !== 'stair' && rules.spade3 && f.count === 1 && f.cards[0].s === 'J' && n === 1 && cards[0].s === 'S' && cards[0].r === 3){
+      return { ok:true, kind:'group', rank:3, ret:true };
+    }
+    if (cls.kind !== fk){
+      return { ok:false, reason: fk === 'stair' ? `場は${f.count}枚の階段です。階段で返してください` : `場は${f.count}枚のまとめ出しです。階段は出せません` };
     }
     if (n !== f.count) return { ok:false, reason:`場は${f.count}枚です。${f.count}枚で出してください` };
-    if (strength(g, rank) <= strength(g, f.rank)) return { ok:false, reason:'場より強いカードを選んでください' };
+    if (fk === 'stair'){
+      const beating = cls.lows.filter(L => strength(g, L) > strength(g, f.rank));
+      if (!beating.length) return { ok:false, reason:'場より強い階段にしてください' };
+      if (f.lock && !cards.filter(c => c.s !== 'J').every(c => c.s === f.lock[0])) return { ok:false, reason:`縛り：${SYM[f.lock[0]]}の階段で出してください` };
+      return { ok:true, kind:'stair', rank:strongest(beating) };
+    }
+    if (strength(g, cls.rank) <= strength(g, f.rank)) return { ok:false, reason:'場より強いカードを選んでください' };
     if (f.lock && !lockOk(f.lock, cards)) return { ok:false, reason:`縛り：${f.lock.map(s => SYM[s]).join('')}を含めて出してください` };
-    return { ok:true, rank };
+    return { ok:true, kind:'group', rank:cls.rank };
   }
 
   function combos(arr, k){
@@ -522,7 +544,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     return out;
   }
 
-  function candidates(hand){
+  function candidates(hand, rules){
     const jokers = hand.filter(c => c.s === 'J');
     const nat = hand.filter(c => c.s !== 'J');
     const byRank = {};
@@ -538,12 +560,27 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       }
     }
     for (let s = 1; s <= jokers.length; s++) out.push(jokers.slice(0, s));
+    if (rules && rules.stairs){
+      for (const suit of SUITS){
+        const byR = {};
+        nat.filter(c => c.s === suit).forEach(c => { byR[c.r] = c; });
+        for (let n = 3; n <= 13; n++){
+          for (let L = 3; L + n - 1 <= 15; L++){
+            if (!byR[L] || !byR[L + n - 1]) continue;
+            const used = []; let miss = 0;
+            for (let r = L; r < L + n; r++){ if (byR[r]) used.push(byR[r]); else miss++; }
+            if (miss > jokers.length) continue;
+            out.push([...used, ...jokers.slice(0, miss)]);
+          }
+        }
+      }
+    }
     return out;
   }
 
   function chooseCpu(g, p, mustPlay){
     const hand = g.hands[p];
-    const legal = candidates(hand).filter(c => validate(g, c).ok);
+    const legal = candidates(hand, g.rules).filter(c => validate(g, c).ok);
     if (!legal.length) return null;
     const win = legal.find(c => c.length === hand.length);
     if (win) return win;
@@ -580,7 +617,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     return {
       phase:'lobby', seq:0, gameNo:0, score:[0,0,0,0], prevOrder:null, seats:null,
       hands:[[],[],[],[]], finished:[], fouled:[], fresh:[], log:[], field:null, ghost:null,
-      rev:false, jback:false, turn:-1, passes:0, ex:null, fx:null, deadline:null, rules:sanitizeRules(null)
+      rev:false, jback:false, dir:1, pend:null, trash:[], turn:-1, passes:0, ex:null, fx:null, deadline:null, rules:sanitizeRules(null)
     };
   }
   function cleanName(n){
@@ -614,7 +651,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     v.hand = p.seat >= 0 ? g.hands[p.seat] : [];
     const mine = new Set(v.hand.map(c => c.id));
     v.fresh = g.fresh.filter(id => mine.has(id));
-    v.field = g.field; v.ghost = g.ghost; v.rev = g.rev; v.jback = g.jback; v.fouled = g.fouled; v.turn = g.turn; v.finished = g.finished;
+    v.field = g.field; v.ghost = g.ghost; v.rev = g.rev; v.jback = g.jback; v.fouled = g.fouled; v.dir = g.dir; v.pend = g.pend ? { type:g.pend.type, seat:g.pend.seat, to:g.pend.to, n:g.pend.n } : null; v.turn = g.turn; v.finished = g.finished;
     v.log = g.log.slice(-4);
     v.msLeft = g.deadline ? Math.max(0, g.deadline - Date.now()) : null;
     v.exNeed = g.ex ? (g.ex.need[p.seat] || 0) : 0;
@@ -673,7 +710,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     deck.forEach((c,i) => hands[i % 4].push(c));
     hands.forEach(h => h.sort(byBase));
     Object.assign(g, {
-      hands, field:null, ghost:null, rev:false, jback:false, passes:0, finished:[], fouled:[], phase:'play',
+      hands, field:null, ghost:null, rev:false, jback:false, dir:1, pend:null, trash:[], passes:0, finished:[], fouled:[], phase:'play',
       fresh:[], log:[], ex:null, gameNo:g.gameNo + 1, turn:-1, fx:null
     });
     if (g.prevOrder){ startExchange(room); return; }
@@ -735,44 +772,65 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     const v = validate(g, cards);
     if (!v.ok) return false;
     const prev = g.field;
+    const stair = v.kind === 'stair';
+    const grp = !stair && !v.ret;             // 数字ごとの特別ルールは「まとめ出し」のときだけ
     const ids = new Set(cards.map(c => c.id));
     g.hands[p] = g.hands[p].filter(c => !ids.has(c.id));
     const own = new Set(g.hands[p].map(c => c.id));
     g.fresh = g.fresh.filter(id => !ids.has(id) && !own.has(id));
-    const shown = cards.slice().sort(byBase);
+    const shown = stair ? arrangeStair(cards, v.rank) : cards.slice().sort(byBase);
     const name = g.seats[p].name;
     const suits = suitsOf(cards);
+    const suitsKey = stair ? [suits[0]] : suits;
 
     // 縛り：同じマークが続いたら、場が流れるまで固定
     let lock = null;
     if (prev && !v.ret){
       if (prev.lock) lock = prev.lock;
-      else if (rules.lock && prev.suits && prev.suits.length === prev.count && prev.count === cards.length
-               && suits.length === cards.length && prev.suits.join('') === suits.join('')){
-        lock = suits;
-        glog(g, `縛り！ ${lock.map(s => SYM[s]).join('')}しか出せません`);
+      else if (rules.lock && (prev.kind || 'group') === v.kind){
+        if (stair){
+          if (prev.suits && prev.suits[0] === suitsKey[0]){
+            lock = suitsKey;
+            glog(g, `縛り！ ${SYM[lock[0]]}の階段しか出せません`);
+          }
+        } else if (prev.suits && prev.suits.length === prev.count && prev.count === cards.length
+                   && suits.length === cards.length && prev.suits.join('') === suits.join('')){
+          lock = suits;
+          glog(g, `縛り！ ${lock.map(s => SYM[s]).join('')}しか出せません`);
+        }
       }
     }
 
     g.ghost = null;
-    g.field = { cards:shown, count:cards.length, rank:v.rank, owner:p, suits, lock };
+    g.field = { cards:shown, count:cards.length, rank:v.rank, owner:p, suits:suitsKey, lock, kind:v.kind };
     g.passes = 0;
-    glog(g, `${name}：${cardsText(shown)}${v.ret ? '（スペ3返し）' : ''}`);
+    glog(g, `${name}：${cardsText(shown)}${v.ret ? '（スペ3返し）' : ''}${stair ? '（階段）' : ''}`);
 
     let fx = '';
-    if (rules.revolution && cards.length >= 4){
+    let revCause = '';
+    if (rules.revolution && grp && cards.length >= 4) revCause = 'quad';
+    else if (rules.sandstorm && grp && v.rank === 3 && cards.length >= 3) revCause = 'sand';
+    else if (rules.stairrev && stair && cards.length >= 5) revCause = 'stair';
+    if (revCause){
       g.rev = !g.rev;
-      glog(g, g.rev ? '革命！ カードの強さが逆転' : '革命返し！ 強さが元に戻った');
-      fx = '革命';
+      const label = revCause === 'sand' ? '砂嵐！' : revCause === 'stair' ? '階段革命！' : '革命！';
+      glog(g, g.rev ? `${label} カードの強さが逆転` : `${label}（革命返し）強さが元に戻った`);
+      fx = revCause === 'sand' ? '砂嵐' : '革命';
     }
-    if (rules.jback && v.rank === 11 && !v.ret && !g.jback){
+    if (rules.jback && grp && v.rank === 11 && !g.jback){
       g.jback = true;
       glog(g, '11バック！ 場が流れるまで強さが逆転');
       if (!fx) fx = '11バック';
     }
+    if (rules.reverse9 && grp && v.rank === 9){
+      g.dir = g.dir === -1 ? 1 : -1;
+      glog(g, g.dir === -1 ? '9リバース！ 順番が逆回りになった' : '9リバース！ 順番が元の向きに戻った');
+      if (!fx) fx = 'リバース';
+    }
 
     const hasJoker = cards.some(c => c.s === 'J');
-    const eight = rules.eight && v.rank === 8 && !v.ret;
+    const eight = rules.eight && grp && v.rank === 8;
+    const ambulance = rules.ambulance && grp && v.rank === 9 && cards.length >= 2;
     let out = false;
     if (g.hands[p].length === 0){
       out = true;
@@ -793,12 +851,12 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       g.field = null; g.jback = false; g.passes = 0;
     };
     let next;
-    if (eight){
-      clearField(`${name}の八切り`);
-      glog(g, '八切り！ 場が流れた');
-      if (!fx) fx = '八切り';
+    if (eight || ambulance){
+      clearField(eight ? `${name}の八切り` : `${name}の救急車`);
+      glog(g, eight ? '八切り！ 場が流れた' : '救急車！ 場が流れた');
+      if (!fx) fx = eight ? '八切り' : '救急車';
       next = out ? nextActive(g, p) : p;
-    } else if (rules.skip5 && v.rank === 5 && !v.ret){
+    } else if (rules.skip5 && grp && v.rank === 5){
       const n1 = nextActive(g, p), n2 = nextActive(g, n1);
       if (n1 === p || n2 === p){
         clearField(`${name}の5スキップ`);
@@ -813,8 +871,109 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     } else {
       next = nextActive(g, p);
     }
+
+    // 7渡し・10捨て：出した人が、続けてカードを選ぶ
+    const left = g.hands[p].length;
+    if (left > 0 && grp){
+      let pend = null;
+      if (rules.give7 && v.rank === 7){
+        const to = nextActive(g, p);
+        if (to !== p) pend = { type:'give', seat:p, to, n:Math.min(cards.length, left) };
+      } else if (rules.discard10 && v.rank === 10){
+        pend = { type:'discard', seat:p, to:-1, n:Math.min(cards.length, left) };
+      } else if (rules.qbomber && v.rank === 12){
+        pend = { type:'bomber', seat:p, to:-1, n:0 };
+      }
+      if (pend){
+        pend.turnAfter = next;
+        g.pend = pend;
+        g.turn = p;
+        glog(g, pend.type === 'give'
+          ? `7渡し！ ${name}は${g.seats[pend.to].name}に${pend.n}枚を渡します`
+          : pend.type === 'discard'
+            ? `10捨て！ ${name}は${pend.n}枚を捨てます`
+            : `Qボンバー！ ${name}が数字を宣言します`);
+        if (!fx) fx = pend.type === 'give' ? '7渡し' : pend.type === 'discard' ? '10捨て' : 'Qボンバー';
+        touch(room, fx);
+        return true;
+      }
+    }
     g.turn = next;
     touch(room, fx);
+    return true;
+  }
+
+  // Qボンバーで、CPU・時間切れのときに宣言する数字（自分が持っていない数字から選ぶ）
+  function pickBombRank(g, p){
+    const own = {};
+    g.hands[p].forEach(c => { if (c.s !== 'J') own[c.r] = (own[c.r] || 0) + 1; });
+    const ranks = [];
+    for (let r = 3; r <= 15; r++) ranks.push(r);
+    const minOwn = Math.min(...ranks.map(r => own[r] || 0));
+    const pool = ranks.filter(r => (own[r] || 0) === minOwn);
+    return pool[randInt(pool.length)];
+  }
+
+  // 7渡し・10捨て・Qボンバーの、選んだあとの処理
+  function doPend(room, p, cards, rank){
+    const g = room.g;
+    const pd = g.pend;
+    if (!pd || pd.seat !== p) return false;
+    const name = g.seats[p].name;
+    let next = pd.turnAfter;
+    if (pd.type === 'bomber'){
+      g.pend = null;
+      glog(g, `Qボンバー！ ${name}は「${LABEL(rank)}」を宣言した`);
+      const stepSeat = s => (s + (g.dir === -1 ? 3 : 1)) % 4;
+      const order = [];
+      let s = p;
+      for (let k = 0; k < 4; k++){ order.push(s); s = stepSeat(s); }
+      let total = 0;
+      for (const i of order){
+        if (g.finished.includes(i)) continue;
+        const dropped = g.hands[i].filter(c => c.s !== 'J' && c.r === rank);
+        if (dropped.length){
+          g.hands[i] = g.hands[i].filter(c => !(c.s !== 'J' && c.r === rank));
+          g.trash = (g.trash || []).concat(dropped);
+          total += dropped.length;
+          glog(g, `${g.seats[i].name}は${dropped.length}枚を捨てた`);
+        }
+      }
+      if (!total) glog(g, 'だれも持っていなかった');
+      for (const i of order){
+        if (!g.finished.includes(i) && g.hands[i].length === 0){
+          g.finished.push(i);
+          const place = g.finished.filter(x => !g.fouled.includes(x)).length - 1;
+          glog(g, `${g.seats[i].name}があがり（${TITLES[place]}）`);
+        }
+      }
+      if (active(g).length <= 1){ endGame(room, 'Qボンバー'); return true; }
+      if (g.finished.includes(next)) next = nextActive(g, next);
+      g.turn = next;
+      touch(room, 'Qボンバー');
+      return true;
+    }
+    const ids = new Set(cards.map(c => c.id));
+    g.hands[p] = g.hands[p].filter(c => !ids.has(c.id));
+    if (pd.type === 'give'){
+      g.hands[pd.to].push(...cards);
+      g.hands[pd.to].sort(byBase);
+      cards.forEach(c => g.fresh.push(c.id));
+      glog(g, `${name}が${g.seats[pd.to].name}に${cards.length}枚を渡した`);
+    } else {
+      g.trash = (g.trash || []).concat(cards);
+      glog(g, `${name}は${cardsText(cards.slice().sort(byBase))}を捨てた`);
+    }
+    g.pend = null;
+    if (g.hands[p].length === 0){
+      g.finished.push(p);
+      const place = g.finished.filter(i => !g.fouled.includes(i)).length - 1;
+      glog(g, `${name}があがり（${TITLES[place]}）`);
+      if (active(g).length <= 1){ endGame(room, ''); return true; }
+      if (next === p) next = nextActive(g, p);
+    }
+    g.turn = next;
+    touch(room);
     return true;
   }
 
@@ -904,12 +1063,17 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     const g = room.g;
     if (g.seq !== seq || g.phase !== 'play' || g.turn !== p) return;
     if (timedOut) glog(g, `${g.seats[p].name}は時間切れのため自動で進行します`);
+    if (g.pend && g.pend.seat === p){
+      if (g.pend.type === 'bomber') doPend(room, p, [], pickBombRank(g, p));
+      else doPend(room, p, low(g.hands[p], g.pend.n));
+      return;
+    }
     const choice = chooseCpu(g, p, timedOut);
     if (choice) doPlay(room, p, choice); else doPass(room, p);
   }
 
   function handCards(room, p, ids){
-    if (!Array.isArray(ids) || ids.length > 4 || !ids.every(Number.isInteger)) throw new ApiError('カードの指定が正しくありません');
+    if (!Array.isArray(ids) || ids.length > 13 || !ids.every(Number.isInteger)) throw new ApiError('カードの指定が正しくありません');
     const cards = room.g.hands[p.seat].filter(c => ids.includes(c.id));
     if (cards.length !== new Set(ids).size) throw new ApiError('そのカードは持っていません');
     return cards;
@@ -927,6 +1091,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
         return;
       case 'play': {
         if (g.phase !== 'play' || g.turn !== p.seat) throw new ApiError('あなたの番ではありません');
+        if (g.pend) throw new ApiError('先に、渡す（捨てる）カードを選んでください');
         const cards = handCards(room, p, body.ids);
         const v = validate(g, cards);
         if (!v.ok) throw new ApiError(v.reason || '出せないカードです');
@@ -935,6 +1100,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       }
       case 'pass':
         if (g.phase !== 'play' || g.turn !== p.seat) throw new ApiError('あなたの番ではありません');
+        if (g.pend) throw new ApiError('先に、渡す（捨てる）カードを選んでください');
         if (!g.field) throw new ApiError('最初の手番ではパスできません');
         doPass(room, p.seat);
         return;
@@ -959,6 +1125,19 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
         g.score = [0,0,0,0]; g.prevOrder = null; g.gameNo = 0;
         newGame(room);
         return;
+      case 'pend': {
+        if (g.phase !== 'play' || !g.pend || g.pend.seat !== p.seat) throw new ApiError('いまは選ぶ必要がありません');
+        if (g.pend.type === 'bomber'){
+          const r = body.rank;
+          if (!Number.isInteger(r) || r < 3 || r > 15) throw new ApiError('宣言する数字が正しくありません');
+          doPend(room, p.seat, [], r);
+          return;
+        }
+        const cards = handCards(room, p, body.ids);
+        if (cards.length !== g.pend.n) throw new ApiError(`${g.pend.n}枚を選んでください`);
+        doPend(room, p.seat, cards);
+        return;
+      }
       case 'rules':
         if (!isHost) throw new ApiError('ルールを変えられるのはホストだけです');
         if (g.phase !== 'lobby' && g.phase !== 'over') throw new ApiError('対戦中はルールを変えられません');
@@ -1279,7 +1458,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     $('room-chip').hidden = !showCode;
     if (showCode) $('room-chip').textContent = '部屋 ' + V.code;
     $('game-no').hidden = n !== 'game';
-    if (n !== 'game'){ $('rev-chip').hidden = true; $('jb-chip').hidden = true; }
+    if (n !== 'game'){ $('rev-chip').hidden = true; $('jb-chip').hidden = true; $('rv-chip').hidden = true; }
     document.body.classList.toggle('rev', n === 'game' && !!V && !!V.rev);
     if (n === 'menu') $('conn-chip').hidden = true;
   }
@@ -1312,6 +1491,9 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       setTimeout(() => { if (V && V.phase === 'over' && V.gameNo === gn) showResult(); }, 900);
     }
     if (V.phase !== 'over' && modalKind === 'result') closeModal();
+    const bombMine = V.phase === 'play' && V.pend && V.pend.type === 'bomber' && V.pend.seat === me;
+    if (bombMine && modalKind !== 'bomber' && $('modal').hidden) showBomberPicker();
+    if (!bombMine && modalKind === 'bomber') closeModal();
     document.title = (V.phase === 'play' && V.turn === me ? '▶ あなたの番｜' : '') + '大富豪';
   }
 
@@ -1370,7 +1552,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     const f = V.field, g = V.ghost;
     let html;
     if (f){
-      html = `<div class="stage"><div class="cards ${drop ? 'drop' : ''}">${f.cards.map(c => cardHTML(c)).join('')}</div><div class="cap">${esc(nm(f.owner))}が${f.count}枚出しました${f.lock ? '　縛り：' + f.lock.map(s => SYM[s]).join('') : ''}</div></div>`;
+      html = `<div class="stage"><div class="cards ${drop ? 'drop' : ''}">${f.cards.map(c => cardHTML(c)).join('')}</div><div class="cap">${esc(nm(f.owner))}が${f.count}枚${f.kind === 'stair' ? 'の階段を出しました' : '出しました'}${f.lock ? '　縛り：' + f.lock.map(s => SYM[s]).join('') : ''}</div></div>`;
     } else if (g){
       html = `<div class="stage ghost"><div class="cards">${g.cards.map(c => cardHTML(c)).join('')}</div><div class="cap">${esc(g.note)}</div></div>`;
     } else {
@@ -1431,6 +1613,24 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     } else if (me >= 0 && V.finished.includes(me)){
       showPass = false; label = '観戦中';
       hint = 'あがり！ 残りの順位が決まるまでお待ちください';
+    } else if (V.pend){
+      showPass = false;
+      if (V.pend.seat === me && V.pend.type === 'bomber'){
+        label = '数字を宣言';
+        canPlay = true;
+        hint = 'Qボンバー：宣言する数字を選んでください' + clock();
+      } else if (V.pend.seat === me){
+        label = V.pend.type === 'give' ? '渡す' : '捨てる';
+        canPlay = sel.length === V.pend.n;
+        hint = (V.pend.type === 'give'
+          ? `7渡し：${nm(V.pend.to)}に渡すカードを${V.pend.n}枚選んでください`
+          : `10捨て：捨てるカードを${V.pend.n}枚選んでください`) + `（選択中 ${sel.length}枚）` + clock();
+      } else {
+        label = '待機中';
+        hint = V.pend.type === 'bomber'
+          ? `${nm(V.pend.seat)}がQボンバーの数字を宣言しています`
+          : `${nm(V.pend.seat)}が${V.pend.type === 'give' ? '7渡し' : '10捨て'}のカードを選んでいます`;
+      }
     } else if (myTurn){
       const v = localCheck(sel);
       canPlay = v.ok;
@@ -1459,6 +1659,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     $('game-no').textContent = `第${V.gameNo}戦`;
     $('rev-chip').hidden = !V.rev;
     $('jb-chip').hidden = !V.jback;
+    $('rv-chip').hidden = V.dir !== -1;
     renderSeats(); renderField(drop); renderHand(); renderControls();
   }
 
@@ -1501,6 +1702,12 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       <p>次の対戦では、大貧民の強い2枚と大富豪の選んだ2枚、貧民の強い1枚と富豪の選んだ1枚を交換します。</p>${actions}`, 'result');
   }
 
+  function showBomberPicker(){
+    const btns = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      .map(r => `<button type="button" class="btn" data-bomb="${r}">${LABEL(r)}</button>`).join('');
+    showModal(`<h2>Qボンバー</h2><p>宣言する数字を選んでください。あなたを含む全員が、その数字のカードを捨てます。</p><div class="bombgrid">${btns}</div>`, 'bomber');
+  }
+
   function showRules(){
     const r = V ? V.rules : loadRules();
     const active = RULE_DEFS.filter(d => r[d.key]).map(d => `<li><b>${d.name}</b>：${d.desc}</li>`).join('');
@@ -1522,10 +1729,12 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   }
 
   /* ======================= ルール設定 ======================= */
+  const ALL_KEYS = RULE_DEFS.map(d => d.key);
+  const mkPreset = on => { const o = { jokers:2 }; ALL_KEYS.forEach(k => { o[k] = on.includes(k); }); return o; };
   const PRESETS = {
-    standard:{ eight:true, revolution:true, spade3:true, jback:false, lock:false, skip5:false, miyako:false, foul:false, jokers:2 },
-    all:{ eight:true, revolution:true, spade3:true, jback:true, lock:true, skip5:true, miyako:true, foul:true, jokers:2 },
-    none:{ eight:false, revolution:false, spade3:false, jback:false, lock:false, skip5:false, miyako:false, foul:false, jokers:2 }
+    standard:mkPreset(['eight', 'revolution', 'spade3']),
+    all:mkPreset(ALL_KEYS),
+    none:mkPreset([])
   };
   function loadRules(){
     try { return sanitizeRules(JSON.parse(store.get('daifugo:rules') || 'null')); }
@@ -1607,6 +1816,14 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
       doAct('exchange', { ids });
       return;
     }
+    if (V.phase === 'play' && V.pend){
+      if (V.pend.type === 'bomber'){ if (V.pend.seat === me) showBomberPicker(); return; }
+      if (V.pend.seat !== me || sel.length !== V.pend.n) return;
+      const ids = sel.map(c => c.id);
+      L.sel.clear();
+      doAct('pend', { ids });
+      return;
+    }
     if (V.phase !== 'play' || V.turn !== me || !localCheck(sel).ok) return;
     const ids = sel.map(c => c.id);
     L.sel.clear();
@@ -1614,7 +1831,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   });
 
   $('btn-pass').addEventListener('click', () => {
-    if (!V || V.phase !== 'play' || V.turn !== me || !V.field) return;
+    if (!V || V.phase !== 'play' || V.turn !== me || !V.field || V.pend) return;
     L.sel.clear();
     doAct('pass');
   });
@@ -1627,6 +1844,8 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     if (t === 'm-next'){ closeModal(); doAct('next'); }
     if (t === 'm-reset'){ closeModal(); doAct('reset'); }
     if (t === 'm-rules') openRuleEditor();
+    const bb = e.target.closest('[data-bomb]');
+    if (bb && modalKind === 'bomber'){ closeModal(); doAct('pend', { rank:Number(bb.dataset.bomb) }); }
     const pr = e.target.closest('[data-preset]');
     if (pr && modalKind === 'ruleedit'){ setEditor(PRESETS[pr.dataset.preset]); applyEditor(); }
   });
