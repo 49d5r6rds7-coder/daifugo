@@ -1785,10 +1785,14 @@ body.ambulance-shake {
     Array.from(L.sel).forEach(id => { if (!mine.has(id)) L.sel.delete(id); });
     render(drop);
     
-if (V.fx && V.fx.seq > L.lastFx){
+if (V.fx && V.fx.seq > L.lastFx) {
   if (!first) {
     if (V.fx.text === '救急車') {
       playAmbulance();
+    } else if (V.fx.text === '革命') {
+      flash('🔥 REVOLUTION!! 🔥');
+    } else if (V.fx.text === '8切り') {
+      flash('⚡ 8 CUT!! ⚡');
     } else {
       flash(V.fx.text);
     }
