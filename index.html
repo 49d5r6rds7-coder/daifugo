@@ -549,6 +549,29 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   }
 }
 
+/* 救急車の突入時に画面を揺らす */
+body.ambulance-shake {
+  animation: ambulanceShake 0.12s linear 10;
+}
+
+@keyframes ambulanceShake {
+  0%   { transform: translate(0, 0); }
+  25%  { transform: translate(-5px, 2px); }
+  50%  { transform: translate(5px, -2px); }
+  75%  { transform: translate(-3px, -2px); }
+  100% { transform: translate(0, 0); }
+}
+body.ambulance-shake {
+  animation: ambulanceShake 0.12s linear 10;
+}
+
+@keyframes ambulanceShake {
+  0%   { transform: translate(0, 0); }
+  25%  { transform: translate(-5px, 2px); }
+  50%  { transform: translate(5px, -2px); }
+  75%  { transform: translate(-3px, -2px); }
+  100% { transform: translate(0, 0); }
+}
 </style>
 </head>
 <body>
@@ -1955,27 +1978,31 @@ let ambulanceTimer = null;
 
 function playAmbulance() {
   const scene = document.getElementById('ambulance-scene');
-  const siren = new Audio('siren.mp3');
-siren.volume = 0.5;
-siren.play().then(() => {
-  console.log('サイレン再生成功');
-}).catch((error) => {
-  console.error('サイレン再生失敗:', error);
-});
   if (!scene) return;
 
   clearTimeout(ambulanceTimer);
 
+  document.body.classList.remove('ambulance-shake');
   scene.classList.remove('run');
   scene.hidden = false;
 
-  // アニメーションを最初から再生する
+  // アニメーションを最初から再生
   void scene.offsetWidth;
   scene.classList.add('run');
+  document.body.classList.add('ambulance-shake');
 
+  // サイレンを再生
+  const siren = new Audio('siren.mp3');
+  siren.volume = 0.5;
+  siren.play().catch((error) => {
+    console.error('サイレン再生失敗:', error);
+  });
+
+  // 演出終了
   ambulanceTimer = setTimeout(() => {
     scene.hidden = true;
     scene.classList.remove('run');
+    document.body.classList.remove('ambulance-shake');
   }, 2000);
 }
 
