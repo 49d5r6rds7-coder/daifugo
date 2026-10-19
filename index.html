@@ -526,6 +526,29 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
   }
 }
 
+/* 画面全体の緊急フラッシュ */
+.ambulance-scene.run::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: rgba(255, 0, 0, 0.22);
+  animation: ambulanceScreenFlash 0.2s steps(2, end) 9;
+}
+
+@keyframes ambulanceScreenFlash {
+  0% {
+    background: rgba(255, 0, 0, 0.28);
+  }
+  50% {
+    background: rgba(0, 80, 255, 0.28);
+  }
+  100% {
+    background: rgba(255, 0, 0, 0.12);
+  }
+}
+
 </style>
 </head>
 <body>
