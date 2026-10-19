@@ -286,6 +286,107 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 
 .bombgrid{ display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:12px; }
 .bombgrid .btn{ min-width:0; padding:0; min-height:46px; font-family:var(--didone); font-size:20px; letter-spacing:0; }
+  
+/* 救急車の専用演出 */
+.ambulance-scene {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  overflow: hidden;
+  background: #07100f;
+}
+
+.ambulance-scene[hidden] {
+  display: none;
+}
+
+.ambulance-road {
+  position: absolute;
+  top: 50%;
+  width: 100%;
+  height: 150px;
+  transform: translateY(-50%);
+  background: #252525;
+  border-top: 4px solid #aaa;
+  border-bottom: 4px solid #aaa;
+}
+
+.ambulance-vehicle {
+  position: absolute;
+  top: 30px;
+  left: -220px;
+  width: 190px;
+  height: 75px;
+  border: 4px solid white;
+  border-radius: 14px;
+  background: #eee;
+}
+
+.ambulance-siren {
+  position: absolute;
+  top: -14px;
+  left: 55px;
+  width: 45px;
+  height: 12px;
+  background: red;
+  animation: sirenFlash .2s infinite alternate;
+}
+
+.ambulance-window {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  width: 42px;
+  height: 25px;
+  background: #8ed9f0;
+}
+
+.ambulance-cross {
+  position: absolute;
+  top: 12px;
+  left: 20px;
+  color: red;
+  font-size: 40px;
+  font-weight: bold;
+}
+
+.ambulance-wheel {
+  position: absolute;
+  bottom: -16px;
+  width: 28px;
+  height: 28px;
+  border: 4px solid #555;
+  border-radius: 50%;
+  background: #111;
+}
+
+.wheel-left { left: 20px; }
+.wheel-right { right: 15px; }
+
+.ambulance-title {
+  position: absolute;
+  top: 20%;
+  width: 100%;
+  text-align: center;
+  color: white;
+  font-size: 36px;
+  font-weight: bold;
+}
+
+.ambulance-scene.run .ambulance-vehicle {
+  animation: ambulanceDrive 1.8s ease-in forwards;
+}
+
+@keyframes sirenFlash {
+  from { background: red; }
+  to { background: blue; }
+}
+
+@keyframes ambulanceDrive {
+  from { left: -220px; }
+  to { left: calc(100% + 220px); }
+}
+
 </style>
 </head>
 <body>
@@ -364,6 +465,21 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
 </main>
 
 <div id="flash" aria-hidden="true"></div>
+  
+<div id="ambulance-scene" class="ambulance-scene" hidden>
+  <div class="ambulance-lights"></div>
+  <div class="ambulance-road">
+    <div class="ambulance-vehicle">
+      <span class="ambulance-siren"></span>
+      <span class="ambulance-window"></span>
+      <span class="ambulance-cross">＋</span>
+      <span class="ambulance-wheel wheel-left"></span>
+      <span class="ambulance-wheel wheel-right"></span>
+    </div>
+  </div>
+  <div class="ambulance-title">🚑 救急車発動！</div>
+</div>
+
 <div id="toast" role="status"></div>
 <div class="scrim" id="modal" hidden></div>
 
@@ -854,7 +970,7 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     if (eight || ambulance){
       clearField(eight ? `${name}の八切り` : `${name}の救急車`);
       glog(g, eight ? '八切り！ 場が流れた' : '救急車！ 場が流れた');
-      if (!fx) fx = eight ? '八切り' : '救急車';
+      fx = eight ? '八切り' : '救急車';
       next = out ? nextActive(g, p) : p;
     } else if (rules.skip5 && grp && v.rank === 5){
       const n1 = nextActive(g, p), n2 = nextActive(g, n1);
@@ -1481,10 +1597,18 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     const mine = new Set(myHand().map(c => c.id));
     Array.from(L.sel).forEach(id => { if (!mine.has(id)) L.sel.delete(id); });
     render(drop);
-    if (V.fx && V.fx.seq > L.lastFx){
-      if (!first) flash(V.fx.text);
-      L.lastFx = V.fx.seq;
+    
+if (V.fx && V.fx.seq > L.lastFx){
+  if (!first) {
+    if (V.fx.text === '救急車') {
+      playAmbulance();
+    } else {
+      flash(V.fx.text);
     }
+  }
+  L.lastFx = V.fx.seq;
+}
+
     if (V.phase === 'over' && L.resultFor !== V.gameNo){
       L.resultFor = V.gameNo;
       const gn = V.gameNo;
@@ -1662,6 +1786,27 @@ button.card.fresh::after{ content:""; position:absolute; top:-5px; right:-5px; w
     $('rv-chip').hidden = V.dir !== -1;
     renderSeats(); renderField(drop); renderHand(); renderControls();
   }
+
+let ambulanceTimer = null;
+
+function playAmbulance() {
+  const scene = document.getElementById('ambulance-scene');
+  if (!scene) return;
+
+  clearTimeout(ambulanceTimer);
+
+  scene.classList.remove('run');
+  scene.hidden = false;
+
+  // アニメーションを最初から再生する
+  void scene.offsetWidth;
+  scene.classList.add('run');
+
+  ambulanceTimer = setTimeout(() => {
+    scene.hidden = true;
+    scene.classList.remove('run');
+  }, 2000);
+}
 
   function flash(text){
     const f = $('flash');
