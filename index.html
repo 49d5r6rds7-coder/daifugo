@@ -572,6 +572,47 @@ body.ambulance-shake {
   75%  { transform: translate(-3px, -2px); }
   100% { transform: translate(0, 0); }
 }
+  
+/* 革命：赤い炎のような演出 */
+body.revolution-effect {
+  animation: revolutionGlow 0.25s ease-in-out 8;
+}
+
+@keyframes revolutionGlow {
+  0%, 100% {
+    background-color: #220000;
+    filter: brightness(1);
+  }
+  50% {
+    background-color: #b00000;
+    filter: brightness(1.8);
+  }
+}
+
+/* 8切り：青白い雷のような演出 */
+body.eightcut-effect {
+  animation: lightningFlash 0.12s linear 10;
+}
+
+@keyframes lightningFlash {
+  0%, 100% {
+    transform: translate(0, 0);
+    filter: brightness(1);
+  }
+  25% {
+    transform: translate(-4px, 2px);
+    filter: brightness(2.2);
+  }
+  50% {
+    transform: translate(4px, -2px);
+    filter: brightness(1.4);
+  }
+  75% {
+    transform: translate(-2px, -1px);
+    filter: brightness(2);
+  }
+}
+
 </style>
 </head>
 <body>
@@ -1785,18 +1826,38 @@ body.ambulance-shake {
     Array.from(L.sel).forEach(id => { if (!mine.has(id)) L.sel.delete(id); });
     render(drop);
     
+
 if (V.fx && V.fx.seq > L.lastFx) {
   if (!first) {
     if (V.fx.text === '救急車') {
       playAmbulance();
     } else if (V.fx.text === '革命') {
       flash('🔥 REVOLUTION!! 🔥');
+
+      document.body.classList.remove('revolution-effect');
+      void document.body.offsetWidth;
+      document.body.classList.add('revolution-effect');
+
+      setTimeout(() => {
+        document.body.classList.remove('revolution-effect');
+      }, 2200);
+
     } else if (V.fx.text === '8切り') {
       flash('⚡ 8 CUT!! ⚡');
+
+      document.body.classList.remove('eightcut-effect');
+      void document.body.offsetWidth;
+      document.body.classList.add('eightcut-effect');
+
+      setTimeout(() => {
+        document.body.classList.remove('eightcut-effect');
+      }, 1200);
+
     } else {
       flash(V.fx.text);
     }
   }
+
   L.lastFx = V.fx.seq;
 }
 
