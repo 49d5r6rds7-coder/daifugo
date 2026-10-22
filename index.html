@@ -719,7 +719,52 @@ body.eightcut-effect {
   const TURN_MS = 60000;     // 1手の持ち時間
   const EX_MS = 45000;       // カード交換の持ち時間
   const CPU_MS = 900;        // CPU が考える時間
-  const CPU_NAMES = ['ハルカ', 'タケル', 'ミナ'];
+  
+const FAMILY_NAMES = [
+  '佐藤', '鈴木', '高橋', '田中', '伊藤',
+  '渡辺', '山本', '中村', '小林', '加藤',
+  '吉田', '山田', '佐々木', '山口', '松本',
+  '井上', '木村', '林', '清水', '斎藤',
+  '池田', '橋本', '阿部', '石川', '山崎',
+  '森', '前田', '藤田', '岡田', '後藤',
+  '長谷川', '村上', '近藤', '石井', '坂本',
+  '遠藤', '青木', '藤井', '西村', '福田'
+];
+
+const GIVEN_NAMES = [
+  'ハルト', 'ユウト', 'ソウタ', 'ハルキ', 'リク',
+  'ユウキ', 'ソラ', 'レン', 'カイト', 'アオイ',
+  'ヒナタ', 'ミナト', 'タケル', 'ユイ', 'サクラ',
+  'アカリ', 'ミオ', 'ハナ', 'メイ', 'リオ',
+  'コウキ', 'ショウ', 'ナオ', 'ツバサ', 'アサヒ',
+  'イツキ', 'カナタ', 'トウマ', 'セナ', 'ユズキ'
+];
+
+function randomCpuName() {
+  const family =
+    FAMILY_NAMES[Math.floor(Math.random() * FAMILY_NAMES.length)];
+
+  const given =
+    GIVEN_NAMES[Math.floor(Math.random() * GIVEN_NAMES.length)];
+
+  return family + ' ' + given;
+}
+
+function createCpuNames(count) {
+  const names = new Set();
+  const maxNames = FAMILY_NAMES.length * GIVEN_NAMES.length;
+
+  count = Math.max(0, Math.min(Math.floor(count), maxNames));
+
+  while (names.size < count) {
+    names.add(randomCpuName());
+  }
+
+  return [...names];
+}
+
+const CPU_NAMES = createCpuNames(3);
+
   const TITLES = ['大富豪', '富豪', '貧民', '大貧民'];
   const POINTS = [4, 3, 2, 1];
   const SUITS = ['S', 'H', 'D', 'C'];
