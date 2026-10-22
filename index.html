@@ -763,7 +763,6 @@ function createCpuNames(count) {
   return [...names];
 }
 
-const CPU_NAMES = createCpuNames(3);
 
   const TITLES = ['大富豪', '富豪', '貧民', '大貧民'];
   const POINTS = [4, 3, 2, 1];
@@ -1088,7 +1087,13 @@ const CPU_NAMES = createCpuNames(3);
     });
     room.players = ordered;
     let ci = 0;
-    while (g.seats.length < 4) g.seats.push({ name:CPU_NAMES[ci++], cpu:true, pid:null });
+    while (g.seats.length < 4) {
+  g.seats.push({
+    name: randomCpuName(),
+    cpu: true,
+    pid: null
+  });
+}
     newGame(room);
   }
 
